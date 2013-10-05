@@ -69,6 +69,10 @@ endif
 # We can revisit this when LLVM/Clang support it.
 CXX.Flags += -fno-strict-aliasing
 
+# Many linux distributions use the clang c++99 and gcc c++89 defaults.
+# Ensure we're building in C++11 mode with gnuism support.
+CXX.Flags += -std=gnu++11
+
 # Do not warn about pragmas.  In particular, we are looking to ignore the
 # "#pragma mark" construct which GCC warns about on platforms other than Darwin.
 EXTRA_OPTIONS += -Wno-unknown-pragmas
