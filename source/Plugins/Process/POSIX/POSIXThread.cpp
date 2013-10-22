@@ -29,10 +29,12 @@
 #include "ProcessPOSIX.h"
 #include "ProcessPOSIXLog.h"
 #include "ProcessMonitor.h"
-#include "RegisterContextPOSIX_i386.h"
-#include "RegisterContextPOSIXProcessMonitor_i386.h"
-#include "RegisterContextPOSIXProcessMonitor_x86_64.h"
+#include "RegisterContextPOSIXProcessMonitor_mips64.h"
+#include "RegisterContextPOSIXProcessMonitor_x86.h"
+#include "RegisterContextLinux_i386.h"
 #include "RegisterContextLinux_x86_64.h"
+#include "RegisterContextFreeBSD_i386.h"
+#include "RegisterContextFreeBSD_mips64.h"
 #include "RegisterContextFreeBSD_x86_64.h"
 
 #include "UnwindLLDB.h"
@@ -141,48 +143,64 @@ POSIXThread::GetRegisterContext()
     {
         m_posix_thread = NULL;
 
-        ArchSpec arch = Host::GetArchitecture();
-        switch (arch.GetCore())
-        {
-        default:
-            assert(false && "CPU type not supported!");
-            break;
+        RegisterInfoInterface *reg_interface = NULL;
+        const ArchSpec &target_arch = GetProcess()->GetTarget().GetArchitecture();
 
-        case ArchSpec::eCore_x86_32_i386:
-        case ArchSpec::eCore_x86_32_i486:
-        case ArchSpec::eCore_x86_32_i486sx:
+        switch (target_arch.GetCore())
         {
-            RegisterContextPOSIXProcessMonitor_i386 *reg_ctx = new RegisterContextPOSIXProcessMonitor_i386(*this, 0);
-            m_posix_thread = reg_ctx;
-            m_reg_context_sp.reset(reg_ctx);
-            break;
-        }
-
-        case ArchSpec::eCore_x86_64_x86_64:
-        {
-            RegisterInfoInterface *reg_interface = NULL;
-
-            switch (arch.GetTriple().getOS())
+            case ArchSpec::eCore_mips64:
             {
-                case llvm::Triple::FreeBSD:
-                    reg_interface = new RegisterContextFreeBSD_x86_64();
-                    break;
-                case llvm::Triple::Linux:
-                    reg_interface = new RegisterContextLinux_x86_64();
-                    break;
-                default:
-                    assert(false && "OS not supported");
-                    break;
+                RegisterInfoInterface *reg_interface = NULL;
+
+                switch (target_arch.GetTriple().getOS())
+                {
+                    case llvm::Triple::FreeBSD:
+                        reg_interface = new RegisterContextFreeBSD_mips64(target_arch);
+                        break;
+                    default:
+                        assert(false && "OS not supported");
+                        break;
+                }
+
+                if (reg_interface)
+                {
+                    RegisterContextPOSIXProcessMonitor_mips64 *reg_ctx = new RegisterContextPOSIXProcessMonitor_mips64(*this, 0, reg_interface);
+                    m_posix_thread = reg_ctx;
+                    m_reg_context_sp.reset(reg_ctx);
+                }
+                break;
             }
 
-            if (reg_interface)
+            case ArchSpec::eCore_x86_32_i386:
+            case ArchSpec::eCore_x86_32_i486:
+            case ArchSpec::eCore_x86_32_i486sx:
+            case ArchSpec::eCore_x86_64_x86_64:
             {
-                RegisterContextPOSIXProcessMonitor_x86_64 *reg_ctx = new RegisterContextPOSIXProcessMonitor_x86_64(*this, 0, reg_interface);
-                m_posix_thread = reg_ctx;
-                m_reg_context_sp.reset(reg_ctx);
+                switch (target_arch.GetTriple().getOS())
+                {
+                    case llvm::Triple::FreeBSD:
+                        reg_interface = new RegisterContextFreeBSD_x86_64(target_arch);
+                        break;
+                    case llvm::Triple::Linux:
+                        reg_interface = new RegisterContextLinux_x86_64(target_arch);
+                        break;
+                    default:
+                        assert(false && "OS not supported");
+                        break;
+                }
+
+                if (reg_interface)
+                {
+                    RegisterContextPOSIXProcessMonitor_x86_64 *reg_ctx = new RegisterContextPOSIXProcessMonitor_x86_64(*this, 0, reg_interface);
+                    m_posix_thread = reg_ctx;
+                    m_reg_context_sp.reset(reg_ctx);
+                }
+                break;
             }
-            break;
-        }
+
+            default:
+                assert(false && "CPU type not supported!");
+                break;
         }
     }
     return m_reg_context_sp;
@@ -210,6 +228,17 @@ POSIXThread::CreateRegisterContextForFrame(lldb_private::StackFrame *frame)
     }
 
     return reg_ctx_sp;
+}
+
+lldb::addr_t
+POSIXThread::GetThreadPointer ()
+{
+    ProcessMonitor &monitor = GetMonitor();
+    addr_t addr;
+    if (monitor.ReadThreadPointer (GetID(), addr))
+        return addr;
+    else
+        return LLDB_INVALID_ADDRESS;
 }
 
 bool
@@ -330,6 +359,10 @@ POSIXThread::Notify(const ProcessMessage &message)
 
     case ProcessMessage::eNewThreadMessage:
         ThreadNotify(message);
+        break;
+
+    case ProcessMessage::eExecMessage:
+        ExecNotify(message);
         break;
     }
 }
@@ -540,6 +573,7 @@ POSIXThread::GetRegisterIndexFromOffset(unsigned offset)
         llvm_unreachable("CPU type not supported!");
         break;
 
+    case ArchSpec::eCore_mips64:
     case ArchSpec::eCore_x86_32_i386:
     case ArchSpec::eCore_x86_32_i486:
     case ArchSpec::eCore_x86_32_i486sx:
@@ -551,6 +585,12 @@ POSIXThread::GetRegisterIndexFromOffset(unsigned offset)
         break;
     }
     return reg;
+}
+
+void
+POSIXThread::ExecNotify(const ProcessMessage &message)
+{
+    SetStopInfo (StopInfo::CreateStopReasonWithExec(*this));
 }
 
 const char *
@@ -565,6 +605,7 @@ POSIXThread::GetRegisterName(unsigned reg)
         assert(false && "CPU type not supported!");
         break;
 
+    case ArchSpec::eCore_mips64:
     case ArchSpec::eCore_x86_32_i386:
     case ArchSpec::eCore_x86_32_i486:
     case ArchSpec::eCore_x86_32_i486sx:

@@ -1,4 +1,4 @@
-//===-- RegisterContextCorePOSIX_x86_64.cpp -------------------------*- C++ -*-===//
+//===-- RegisterContextCorePOSIX_x86_64.cpp ---------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -19,13 +19,13 @@ RegisterContextCorePOSIX_x86_64::RegisterContextCorePOSIX_x86_64(Thread &thread,
                                                                  RegisterInfoInterface *register_info,
                                                                  const DataExtractor &gpregset,
                                                                  const DataExtractor &fpregset)
-    : RegisterContextPOSIX_x86_64(thread, 0, register_info)
+    : RegisterContextPOSIX_x86 (thread, 0, register_info)
 {
     size_t size, len;
 
     size = GetGPRSize();
     m_gpregset = new uint8_t[size];
-    len = gpregset.ExtractBytes(0, size, lldb::eByteOrderLittle, m_gpregset);
+    len = gpregset.ExtractBytes (0, size, lldb::eByteOrderLittle, m_gpregset);
     assert(len == size);
 }
 

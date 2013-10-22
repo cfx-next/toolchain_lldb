@@ -78,6 +78,14 @@ debugging.
 //  Setup the environment up for a new child process that will soon be
 //  launched using the "A" packet.
 //
+// NB: key/value pairs are sent as-is so gdb-remote protocol meta characters
+//     (e.g. '#' or '$') are not acceptable.  If any non-printable or 
+//     metacharacters are present in the strings, QEnvironmentHexEncoded
+//     should be used instead if it is available.  If you don't want to
+//     scan the environment strings before sending, prefer 
+//     the QEnvironmentHexEncoded packet over QEnvironment, if it is
+//     available.
+//
 // PRIORITY TO IMPLEMENT
 //  Low. Only needed if the remote target wants to launch a target after
 //  making a connection to a GDB server that isn't already connected to
@@ -88,6 +96,31 @@ Both GDB and LLDB support passing down environment variables. Is it ok to
 respond with a "$#00" (unimplemented):
 
 send packet: $QEnvironment:ACK_COLOR_FILENAME=bold yellow#00
+read packet: $OK#00
+
+This packet can be sent one or more times _prior_ to sending a "A" packet.
+
+//----------------------------------------------------------------------
+// "QEnvironmentHexEncoded:HEX-ENCODING(NAME=VALUE)"
+//
+// BRIEF
+//  Setup the environment up for a new child process that will soon be
+//  launched using the "A" packet.
+//
+// The only difference between this packet and QEnvironment is that the
+// environment key-value pair is ascii hex encoded for transmission.
+// This allows values with gdb-remote metacharacters like '#' to be sent.
+//
+// PRIORITY TO IMPLEMENT
+//  Low. Only needed if the remote target wants to launch a target after
+//  making a connection to a GDB server that isn't already connected to
+//  an inferior process.
+//----------------------------------------------------------------------
+
+Both GDB and LLDB support passing down environment variables. Is it ok to
+respond with a "$#00" (unimplemented):
+
+send packet: $QEnvironment:41434b5f434f4c4f525f46494c454e414d453d626f6c642379656c6c6f77#00
 read packet: $OK#00
 
 This packet can be sent one or more times _prior_ to sending a "A" packet.
@@ -300,10 +333,22 @@ As we see above we keep making subsequent calls to the remote server to
 discover all registers by increasing the number appended to qRegisterInfo and
 we get a response back that is a series of "key=value;" strings. 
 
-The register offsets may end up describing a register context with gaps.  The
-actual register context structure used may have gaps due to alignment issues.
-Implementations of the g/G packet construction/parsing must handle this padding
-if it exists.  
+The offset: fields should not leave a gap anywhere in the g/G packet -- the
+register values should be appended one after another.  For instance, if the
+register context for a thread looks like 
+
+struct rctx {
+    uint32_t gpr1;  // offset 0
+    uint32_t gpr2;  // offset 4
+    uint32_t gpr3;  // offset 8
+    uint64_t fp1;   // offset 16
+};
+
+You may end up with a 4-byte gap between gpr3 and fp1 on architectures
+that align values like this.  The correct offset: value for fp1 is 12 -
+in the g/G packet fp1 will immediately follow gpr3, even though the 
+in-memory thread structure has an empty 4 bytes for alignment between 
+these two registers.
 
 The keys and values are detailed below:
 

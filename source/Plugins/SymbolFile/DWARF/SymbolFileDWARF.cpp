@@ -70,7 +70,7 @@
 
 #ifdef ENABLE_DEBUG_PRINTF
 #include <stdio.h>
-#define DEBUG_PRINTF(fmt, ...) printf(fmt, ## __VA_ARGS__)
+#define DEBUG_PRINTF(fmt, ...) printf(fmt, __VA_ARGS__)
 #else
 #define DEBUG_PRINTF(fmt, ...)
 #endif
@@ -1706,6 +1706,7 @@ SymbolFileDWARF::ParseChildMembers
     const uint8_t *fixed_form_sizes = DWARFFormValue::GetFixedFormSizesForAddressSize (dwarf_cu->GetAddressByteSize());
     uint32_t member_idx = 0;
     BitfieldInfo last_field_info;
+    ModuleSP module = GetObjectFile()->GetModule();
 
     for (die = parent_die->GetFirstChild(); die != NULL; die = die->GetSibling())
     {
@@ -1769,6 +1770,7 @@ SymbolFileDWARF::ParseChildMembers
                                                                   NULL, // ClangExpressionVariableList *
                                                                   NULL, // ClangExpressionDeclMap *
                                                                   NULL, // RegisterContext *
+                                                                  module,
                                                                   debug_info_data, 
                                                                   block_offset, 
                                                                   block_length, 
@@ -2160,6 +2162,7 @@ SymbolFileDWARF::ParseChildMembers
                                                                    NULL, 
                                                                    NULL, 
                                                                    NULL,
+                                                                   module,
                                                                    debug_info_data, 
                                                                    block_offset, 
                                                                    block_length, 
@@ -3100,7 +3103,7 @@ SymbolFileDWARF::FindGlobalVariables (const ConstString &name, const lldb_privat
     }
     
     if (!NamespaceDeclMatchesThisSymbolFile(namespace_decl))
-		return 0;
+        return 0;
     
     DWARFDebugInfo* info = DebugInfo();
     if (info == NULL)
@@ -3557,7 +3560,7 @@ SymbolFileDWARF::FindFunctions (const ConstString &name,
         sc_list.Clear();
     
     if (!NamespaceDeclMatchesThisSymbolFile(namespace_decl))
-		return 0;
+        return 0;
         
     // If name is empty then we won't find anything.
     if (name.IsEmpty())
@@ -3943,7 +3946,7 @@ SymbolFileDWARF::FindTypes (const SymbolContext& sc,
         types.Clear();
     
     if (!NamespaceDeclMatchesThisSymbolFile(namespace_decl))
-		return 0;
+        return 0;
 
     DIEArray die_offsets;
     
@@ -4045,7 +4048,7 @@ SymbolFileDWARF::FindNamespace (const SymbolContext& sc,
     }
     
     if (!NamespaceDeclMatchesThisSymbolFile(parent_namespace_decl))
-		return ClangNamespaceDecl();
+        return ClangNamespaceDecl();
 
     ClangNamespaceDecl namespace_decl;
     DWARFDebugInfo* info = DebugInfo();
@@ -4844,17 +4847,16 @@ SymbolFileDWARF::FindCompleteObjCDefinitionTypeForDIE (const DWARFDebugInfoEntry
                 
                 if (try_resolving_type)
                 {
-					if (must_be_implementation && type_cu->Supports_DW_AT_APPLE_objc_complete_type())
-	                    try_resolving_type = type_die->GetAttributeValueAsUnsigned (this, type_cu, DW_AT_APPLE_objc_complete_type, 0);
+                    if (must_be_implementation && type_cu->Supports_DW_AT_APPLE_objc_complete_type())
+                        try_resolving_type = type_die->GetAttributeValueAsUnsigned (this, type_cu, DW_AT_APPLE_objc_complete_type, 0);
                     
                     if (try_resolving_type)
                     {
                         Type *resolved_type = ResolveType (type_cu, type_die, false);
                         if (resolved_type && resolved_type != DIE_IS_BEING_PARSED)
                         {
-                            DEBUG_PRINTF ("resolved 0x%8.8" PRIx64 " (cu 0x%8.8" PRIx64 ") from %s to 0x%8.8" PRIx64 " (cu 0x%8.8" PRIx64 ")\n",
+                            DEBUG_PRINTF ("resolved 0x%8.8" PRIx64 " from %s to 0x%8.8" PRIx64 " (cu 0x%8.8" PRIx64 ")\n",
                                           MakeUserID(die->GetOffset()), 
-                                          MakeUserID(dwarf_cu->GetOffset()),
                                           m_obj_file->GetFileSpec().GetFilename().AsCString(),
                                           MakeUserID(type_die->GetOffset()), 
                                           MakeUserID(type_cu->GetOffset()));
@@ -5130,7 +5132,7 @@ SymbolFileDWARF::FindDefinitionTypeForDIE (DWARFCompileUnit* cu,
                         {
                             DEBUG_PRINTF ("resolved 0x%8.8" PRIx64 " (cu 0x%8.8" PRIx64 ") from %s to 0x%8.8" PRIx64 " (cu 0x%8.8" PRIx64 ")\n",
                                           MakeUserID(die->GetOffset()), 
-                                          MakeUserID(dwarf_cu->GetOffset()),
+                                          MakeUserID(cu->GetOffset()),
                                           m_obj_file->GetFileSpec().GetFilename().AsCString(),
                                           MakeUserID(type_die->GetOffset()), 
                                           MakeUserID(type_cu->GetOffset()));
@@ -5745,7 +5747,7 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                         }
                     }
 
-                    DEBUG_PRINTF ("0x%8.8" PRIx64 ": %s (\"%s\") type => 0x%8.8x\n", MakeUserID(die->GetOffset()), DW_TAG_value_to_name(tag), type_name_cstr, encoding_uid);
+                    DEBUG_PRINTF ("0x%8.8" PRIx64 ": %s (\"%s\") type => 0x%8.8lx\n", MakeUserID(die->GetOffset()), DW_TAG_value_to_name(tag), type_name_cstr, encoding_uid);
 
                     switch (tag)
                     {
@@ -5905,12 +5907,12 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                                 {
                                 case DW_AT_decl_file:
                                     if (dwarf_cu->DW_AT_decl_file_attributes_are_invalid())
-									{
-										// llvm-gcc outputs invalid DW_AT_decl_file attributes that always
-										// point to the compile unit file, so we clear this invalid value
-										// so that we can still unique types efficiently.
+                                    {
+                                        // llvm-gcc outputs invalid DW_AT_decl_file attributes that always
+                                        // point to the compile unit file, so we clear this invalid value
+                                        // so that we can still unique types efficiently.
                                         decl.SetFile(FileSpec ("<invalid>", false));
-									}
+                                    }
                                     else
                                         decl.SetFile(sc.comp_unit->GetSupportFiles().GetFileSpecAtIndex(form_value.Unsigned())); 
                                     break;
@@ -7268,6 +7270,7 @@ SymbolFileDWARF::ParseVariableDIE
         return var_sp;  // Already been parsed!
     
     const dw_tag_t tag = die->Tag();
+    ModuleSP module = GetObjectFile()->GetModule();
     
     if ((tag == DW_TAG_variable) ||
         (tag == DW_TAG_constant) ||
@@ -7317,7 +7320,7 @@ SymbolFileDWARF::ParseVariableDIE
                                 // Retrieve the value as a block expression.
                                 uint32_t block_offset = form_value.BlockData() - debug_info_data.GetDataStart();
                                 uint32_t block_length = form_value.Unsigned();
-                                location.CopyOpcodeData(debug_info_data, block_offset, block_length);
+                                location.CopyOpcodeData(module, debug_info_data, block_offset, block_length);
                             }
                             else if (DWARFFormValue::IsDataForm(form_value.Form()))
                             {
@@ -7325,7 +7328,7 @@ SymbolFileDWARF::ParseVariableDIE
                                 const uint8_t *fixed_form_sizes = DWARFFormValue::GetFixedFormSizesForAddressSize (dwarf_cu->GetAddressByteSize());
                                 uint32_t data_offset = attributes.DIEOffsetAtIndex(i);
                                 uint32_t data_length = fixed_form_sizes[form_value.Form()];
-                                location.CopyOpcodeData(debug_info_data, data_offset, data_length);
+                                location.CopyOpcodeData(module, debug_info_data, data_offset, data_length);
                             }
                             else
                             {
@@ -7335,14 +7338,14 @@ SymbolFileDWARF::ParseVariableDIE
                                     const uint8_t *fixed_form_sizes = DWARFFormValue::GetFixedFormSizesForAddressSize (dwarf_cu->GetAddressByteSize());
                                     uint32_t data_offset = attributes.DIEOffsetAtIndex(i);
                                     uint32_t data_length = fixed_form_sizes[form_value.Form()];
-                                    location.CopyOpcodeData(debug_info_data, data_offset, data_length);
+                                    location.CopyOpcodeData(module, debug_info_data, data_offset, data_length);
                                 }
                                 else
                                 {
                                     const char *str = form_value.AsCString(&debug_info_data);
                                     uint32_t string_offset = str - (const char *)debug_info_data.GetDataStart();
                                     uint32_t string_length = strlen(str) + 1;
-                                    location.CopyOpcodeData(debug_info_data, string_offset, string_length);
+                                    location.CopyOpcodeData(module, debug_info_data, string_offset, string_length);
                                 }
                             }
                         }
@@ -7357,7 +7360,7 @@ SymbolFileDWARF::ParseVariableDIE
 
                                 uint32_t block_offset = form_value.BlockData() - debug_info_data.GetDataStart();
                                 uint32_t block_length = form_value.Unsigned();
-                                location.CopyOpcodeData(get_debug_info_data(), block_offset, block_length);
+                                location.CopyOpcodeData(module, get_debug_info_data(), block_offset, block_length);
                             }
                             else
                             {
@@ -7367,7 +7370,7 @@ SymbolFileDWARF::ParseVariableDIE
                                 size_t loc_list_length = DWARFLocationList::Size(debug_loc_data, debug_loc_offset);
                                 if (loc_list_length > 0)
                                 {
-                                    location.CopyOpcodeData(debug_loc_data, debug_loc_offset, loc_list_length);
+                                    location.CopyOpcodeData(module, debug_loc_data, debug_loc_offset, loc_list_length);
                                     assert (func_low_pc != LLDB_INVALID_ADDRESS);
                                     location.SetLocationListSlide (func_low_pc - dwarf_cu->GetBaseAddress());
                                 }

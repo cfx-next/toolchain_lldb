@@ -282,10 +282,16 @@ Thread::~Thread()
 void 
 Thread::DestroyThread ()
 {
-    // Tell any plans on the plan stack that the thread is being destroyed since
-    // any active plans that have a thread go away in the middle of might need
-    // to do cleanup.
+    // Tell any plans on the plan stacks that the thread is being destroyed since
+    // any plans that have a thread go away in the middle of might need
+    // to do cleanup, or in some cases NOT do cleanup...
     for (auto plan : m_plan_stack)
+        plan->ThreadDestroyed();
+
+    for (auto plan : m_discarded_plan_stack)
+        plan->ThreadDestroyed();
+
+    for (auto plan : m_completed_plan_stack)
         plan->ThreadDestroyed();
 
     m_destroy_called = true;
@@ -1857,6 +1863,24 @@ Thread::SettingsTerminate ()
 {
 }
 
+lldb::addr_t
+Thread::GetThreadPointer ()
+{
+    return LLDB_INVALID_ADDRESS;
+}
+
+addr_t
+Thread::GetThreadLocalData (const ModuleSP module)
+{
+    // The default implementation is to ask the dynamic loader for it.
+    // This can be overridden for specific platforms.
+    DynamicLoader *loader = GetProcess()->GetDynamicLoader();
+    if (loader)
+        return loader->GetThreadLocalData (module, shared_from_this());
+    else
+        return LLDB_INVALID_ADDRESS;
+}
+
 lldb::StackFrameSP
 Thread::GetStackFrameSPForStackFramePtr (StackFrame *stack_frame_ptr)
 {
@@ -1936,13 +1960,21 @@ Thread::GetStatus (Stream &strm, uint32_t start_frame, uint32_t num_frames, uint
         strm.IndentMore();
         
         const bool show_frame_info = true;
-        strm.IndentMore ();
+        
+        const char *selected_frame_marker = NULL;
+        if (num_frames == 1 || (GetID() != GetProcess()->GetThreadList().GetSelectedThread()->GetID()))
+            strm.IndentMore ();
+        else
+            selected_frame_marker = "* ";
+
         num_frames_shown = GetStackFrameList ()->GetStatus (strm,
                                                             start_frame, 
                                                             num_frames, 
                                                             show_frame_info, 
-                                                            num_frames_with_source);
-        strm.IndentLess();
+                                                            num_frames_with_source,
+                                                            selected_frame_marker);
+        if (num_frames == 1)
+            strm.IndentLess();
         strm.IndentLess();
     }
     return num_frames_shown;
@@ -2017,6 +2049,7 @@ Thread::GetUnwinder ()
             case llvm::Triple::x86:
             case llvm::Triple::arm:
             case llvm::Triple::thumb:
+            case llvm::Triple::mips64:
                 m_unwinder_ap.reset (new UnwindLLDB (*this));
                 break;
                 

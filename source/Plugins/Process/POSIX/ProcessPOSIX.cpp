@@ -289,12 +289,11 @@ ProcessPOSIX::GetImageInfoAddress()
 {
     Target *target = &GetTarget();
     ObjectFile *obj_file = target->GetExecutableModule()->GetObjectFile();
-    Address addr = obj_file->GetImageInfoAddress();
+    Address addr = obj_file->GetImageInfoAddress(target);
 
-    if (addr.IsValid()) 
+    if (addr.IsValid())
         return addr.GetLoadAddress(target);
-    else
-        return LLDB_INVALID_ADDRESS;
+    return LLDB_INVALID_ADDRESS;
 }
 
 Error
@@ -350,6 +349,31 @@ ProcessPOSIX::DoDestroy()
     }
 
     return error;
+}
+
+void
+ProcessPOSIX::DoDidExec()
+{
+    Target *target = &GetTarget();
+    if (target)
+    {
+        PlatformSP platform_sp (target->GetPlatform());
+        assert (platform_sp.get());
+        if (platform_sp)
+        {
+            ProcessInstanceInfo process_info;
+            platform_sp->GetProcessInfo(GetID(), process_info);
+            ModuleSP exe_module_sp;
+            FileSpecList executable_search_paths (Target::GetDefaultExecutableSearchPaths());
+            Error error = platform_sp->ResolveExecutable(process_info.GetExecutableFile(),
+                                                   target->GetArchitecture(),
+                                                   exe_module_sp,
+                                                   executable_search_paths.GetSize() ? &executable_search_paths : NULL);
+            if (!error.Success())
+                return;
+            target->SetExecutableModule(exe_module_sp, true);
+        }
+    }
 }
 
 void
@@ -426,7 +450,7 @@ ProcessPOSIX::SendMessage(const ProcessMessage &message)
         break;
 
     case ProcessMessage::eNewThreadMessage:
-        {
+    {
         lldb::tid_t  new_tid = message.GetChildTID();
         if (WaitingForInitialStop(new_tid))
         {
@@ -437,8 +461,18 @@ ProcessPOSIX::SendMessage(const ProcessMessage &message)
         StopAllThreads(message.GetTID());
         SetPrivateState(eStateStopped);
         break;
-        }
     }
+
+    case ProcessMessage::eExecMessage:
+    {
+        assert(thread);
+        thread->SetState(eStateStopped);
+        StopAllThreads(message.GetTID());
+        SetPrivateState(eStateStopped);
+        break;
+    }
+    }
+
 
     m_message_queue.push(message);
 }
