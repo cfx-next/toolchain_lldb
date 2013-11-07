@@ -335,7 +335,7 @@ bool
 FormatManager::ShouldPrintAsOneLiner (ValueObject& valobj)
 {
     // if settings say no oneline whatsoever
-    if (valobj.GetTargetSP().get() && valobj.GetTargetSP()->GetDebugger().GetEnableAutoOneLine() == false)
+    if (valobj.GetTargetSP().get() && valobj.GetTargetSP()->GetDebugger().GetAutoOneLineSummaries() == false)
         return false; // then don't oneline
     
     // if this object has a summary, don't try to do anything special to it
@@ -420,6 +420,13 @@ GetTypeForCache (ValueObject& valobj,
     return ConstString();
 }
 
+static lldb::TypeFormatImplSP
+GetHardcodedFormat (ValueObject& valobj,
+                    lldb::DynamicValueType use_dynamic)
+{
+    return lldb::TypeFormatImplSP();
+}
+
 lldb::TypeFormatImplSP
 FormatManager::GetFormat (ValueObject& valobj,
                           lldb::DynamicValueType use_dynamic)
@@ -445,6 +452,12 @@ FormatManager::GetFormat (ValueObject& valobj,
             log->Printf("[FormatManager::GetFormat] Cache search failed. Going normal route");
     }
     retval = m_categories_map.GetFormat(valobj, use_dynamic);
+    if (!retval)
+    {
+        if (log)
+            log->Printf("[FormatManager::GetFormat] Search failed. Giving hardcoded a chance.");
+        retval = GetHardcodedFormat(valobj, use_dynamic);
+    }
     if (valobj_type)
     {
         if (log)
@@ -454,6 +467,13 @@ FormatManager::GetFormat (ValueObject& valobj,
     if (log && log->GetDebug())
         log->Printf("[FormatManager::GetFormat] Cache hits: %" PRIu64 " - Cache Misses: %" PRIu64, m_format_cache.GetCacheHits(), m_format_cache.GetCacheMisses());
     return retval;
+}
+
+static lldb::TypeSummaryImplSP
+GetHardcodedSummaryFormat (ValueObject& valobj,
+                               lldb::DynamicValueType use_dynamic)
+{
+    return lldb::TypeSummaryImplSP();
 }
 
 lldb::TypeSummaryImplSP
@@ -481,6 +501,12 @@ FormatManager::GetSummaryFormat (ValueObject& valobj,
             log->Printf("[FormatManager::GetSummaryFormat] Cache search failed. Going normal route");
     }
     retval = m_categories_map.GetSummaryFormat(valobj, use_dynamic);
+    if (!retval)
+    {
+        if (log)
+            log->Printf("[FormatManager::GetSummaryFormat] Search failed. Giving hardcoded a chance.");
+        retval = GetHardcodedSummaryFormat(valobj, use_dynamic);
+    }
     if (valobj_type)
     {
         if (log)
@@ -493,6 +519,13 @@ FormatManager::GetSummaryFormat (ValueObject& valobj,
 }
 
 #ifndef LLDB_DISABLE_PYTHON
+static lldb::SyntheticChildrenSP
+GetHardcodedSyntheticChildren (ValueObject& valobj,
+                               lldb::DynamicValueType use_dynamic)
+{
+    return lldb::SyntheticChildrenSP();
+}
+
 lldb::SyntheticChildrenSP
 FormatManager::GetSyntheticChildren (ValueObject& valobj,
                                      lldb::DynamicValueType use_dynamic)
@@ -518,6 +551,12 @@ FormatManager::GetSyntheticChildren (ValueObject& valobj,
             log->Printf("[FormatManager::GetSyntheticChildren] Cache search failed. Going normal route");
     }
     retval = m_categories_map.GetSyntheticChildren(valobj, use_dynamic);
+    if (!retval)
+    {
+        if (log)
+            log->Printf("[FormatManager::GetSyntheticChildren] Search failed. Giving hardcoded a chance.");
+        retval = GetHardcodedSyntheticChildren(valobj, use_dynamic);
+    }
     if (valobj_type)
     {
         if (log)
@@ -1114,6 +1153,7 @@ FormatManager::LoadObjCFormatters()
     AddStringSummary(appkit_category_sp,"name:${var.name%S} reason:${var.reason%S}",ConstString("NSException"),appkit_flags);
 
     AddCXXSummary(appkit_category_sp, lldb_private::formatters::NSNumberSummaryProvider, "NSNumber summary provider", ConstString("NSNumber"), appkit_flags);
+    AddCXXSummary(appkit_category_sp, lldb_private::formatters::NSNumberSummaryProvider, "CFNumberRef summary provider", ConstString("CFNumberRef"), appkit_flags);
     AddCXXSummary(corefoundation_category_sp, lldb_private::formatters::NSNumberSummaryProvider, "NSNumber summary provider", ConstString("__NSCFBoolean"), appkit_flags);
     AddCXXSummary(corefoundation_category_sp, lldb_private::formatters::NSNumberSummaryProvider, "NSNumber summary provider", ConstString("__NSCFNumber"), appkit_flags);
     AddCXXSummary(corefoundation_category_sp, lldb_private::formatters::NSNumberSummaryProvider, "NSNumber summary provider", ConstString("NSCFBoolean"), appkit_flags);

@@ -43,6 +43,7 @@
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/StackFrame.h"
+#include "lldb/Target/SystemRuntime.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Target/ThreadSpec.h"
 
@@ -191,7 +192,7 @@ Target::Destroy()
     DeleteCurrentProcess ();
     m_platform_sp.reset();
     m_arch.Clear();
-    m_images.Clear();
+    ClearModules();
     m_section_load_list.Clear();
     const bool notify = false;
     m_breakpoint_list.RemoveAll(notify);
@@ -200,9 +201,6 @@ Target::Destroy()
     m_last_created_watchpoint.reset();
     m_search_filter_sp.reset();
     m_image_search_paths.Clear(notify);
-    m_scratch_ast_context_ap.reset();
-    m_scratch_ast_source_ap.reset();
-    m_ast_importer_ap.reset();
     m_persistent_variables.Clear();
     m_stop_hooks.clear();
     m_stop_hook_next_id = 0;
@@ -634,7 +632,7 @@ Target::CreateWatchpoint(lldb::addr_t addr, size_t size, const ClangASTType *typ
         if (!CheckIfWatchpointsExhausted(this, error))
         {
             if (!OptionGroupWatchpoint::IsWatchSizeSupported(size))
-                error.SetErrorStringWithFormat("watch size of %lu is not supported", size);
+                error.SetErrorStringWithFormat("watch size of %zu is not supported", size);
         }
         wp_sp.reset();
     }
@@ -1016,13 +1014,21 @@ LoadScriptingResourceForModule (const ModuleSP &module_sp, Target *target)
 }
 
 void
-Target::SetExecutableModule (ModuleSP& executable_sp, bool get_dependent_files)
+Target::ClearModules()
 {
-    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TARGET));
+    ModulesDidUnload (m_images, true);
+    GetSectionLoadList().Clear();
     m_images.Clear();
     m_scratch_ast_context_ap.reset();
     m_scratch_ast_source_ap.reset();
     m_ast_importer_ap.reset();
+}
+
+void
+Target::SetExecutableModule (ModuleSP& executable_sp, bool get_dependent_files)
+{
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TARGET));
+    ClearModules();
     
     if (executable_sp.get())
     {
@@ -1091,10 +1097,8 @@ Target::SetArchitecture (const ArchSpec &arch_spec)
           log->Printf ("Target::SetArchitecture changing architecture to %s (%s)", arch_spec.GetArchitectureName(), arch_spec.GetTriple().getTriple().c_str());
         m_arch = arch_spec;
         ModuleSP executable_sp = GetExecutableModule ();
-        m_images.Clear();
-        m_scratch_ast_context_ap.reset();
-        m_scratch_ast_source_ap.reset();
-        m_ast_importer_ap.reset();
+
+        ClearModules();
         // Need to do something about unsetting breakpoints.
         
         if (executable_sp)
@@ -1139,7 +1143,7 @@ Target::ModuleRemoved (const ModuleList& module_list, const ModuleSP &module_sp)
     // A module is being added to this target for the first time
     ModuleList my_module_list;
     my_module_list.Append(module_sp);
-    ModulesDidUnload (my_module_list);
+    ModulesDidUnload (my_module_list, false);
 }
 
 void
@@ -1154,7 +1158,15 @@ Target::ModulesDidLoad (ModuleList &module_list)
 {
     if (module_list.GetSize())
     {
-        m_breakpoint_list.UpdateBreakpoints (module_list, true);
+        m_breakpoint_list.UpdateBreakpoints (module_list, true, false);
+        if (m_process_sp)
+        {
+            SystemRuntime *sys_runtime = m_process_sp->GetSystemRuntime();
+            if (sys_runtime)
+            {
+                sys_runtime->ModulesDidLoad (module_list);
+            }
+        }
         // TODO: make event data that packages up the module_list
         BroadcastEvent (eBroadcastBitModulesLoaded, NULL);
     }
@@ -1175,17 +1187,17 @@ Target::SymbolsDidLoad (ModuleList &module_list)
             }
         }
         
-        m_breakpoint_list.UpdateBreakpoints (module_list, true);
+        m_breakpoint_list.UpdateBreakpoints (module_list, true, false);
         BroadcastEvent(eBroadcastBitSymbolsLoaded, NULL);
     }
 }
 
 void
-Target::ModulesDidUnload (ModuleList &module_list)
+Target::ModulesDidUnload (ModuleList &module_list, bool delete_locations)
 {
     if (module_list.GetSize())
     {
-        m_breakpoint_list.UpdateBreakpoints (module_list, false);
+        m_breakpoint_list.UpdateBreakpoints (module_list, false, delete_locations);
         // TODO: make event data that packages up the module_list
         BroadcastEvent (eBroadcastBitModulesUnloaded, NULL);
     }
@@ -1728,10 +1740,7 @@ Target::ImageSearchPathsChanged
     Target *target = (Target *)baton;
     ModuleSP exe_module_sp (target->GetExecutableModule());
     if (exe_module_sp)
-    {
-        target->m_images.Clear();
         target->SetExecutableModule (exe_module_sp, true);
-    }
 }
 
 ClangASTContext *
@@ -1879,18 +1888,13 @@ Target::EvaluateExpression
     else
     {
         const char *prefix = GetExpressionPrefixContentsAsCString();
-                
+        Error error;
         execution_results = ClangUserExpression::Evaluate (exe_ctx, 
-                                                           options.GetExecutionPolicy(),
-                                                           lldb::eLanguageTypeUnknown,
-                                                           options.DoesCoerceToId() ? ClangUserExpression::eResultTypeId : ClangUserExpression::eResultTypeAny,
-                                                           options.DoesUnwindOnError(),
-                                                           options.DoesIgnoreBreakpoints(),
-                                                           expr_cstr, 
+                                                           options,
+                                                           expr_cstr,
                                                            prefix, 
                                                            result_valobj_sp,
-                                                           options.GetRunOthers(),
-                                                           options.GetTimeoutUsec());
+                                                           error);
     }
     
     m_suppress_stop_hooks = old_suppress_value;

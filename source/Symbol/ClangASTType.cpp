@@ -288,6 +288,26 @@ ClangASTType::IsArrayType (ClangASTType *element_type_ptr,
     return 0;
 }
 
+bool
+ClangASTType::IsRuntimeGeneratedType () const
+{
+    if (!IsValid())
+        return false;
+    
+    clang::DeclContext* decl_ctx = GetDeclContextForType();
+    if (!decl_ctx)
+        return false;
+
+    if (!llvm::isa<clang::ObjCInterfaceDecl>(decl_ctx))
+        return false;
+    
+    clang::ObjCInterfaceDecl *result_iface_decl = llvm::dyn_cast<clang::ObjCInterfaceDecl>(decl_ctx);
+    
+    ClangASTMetadata* ast_metadata = ClangASTContext::GetMetadata(m_ast, result_iface_decl);
+    if (!ast_metadata)
+        return false;
+    return (ast_metadata->GetISAPtr() != 0);
+}
 
 bool
 ClangASTType::IsCharType () const

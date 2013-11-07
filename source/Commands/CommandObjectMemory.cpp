@@ -651,7 +651,7 @@ protected:
             }
             else if (m_format_options.GetCountValue().OptionWasSet())
             {
-                result.AppendErrorWithFormat("specify either the end address (0x%" PRIx64 ") or the count (--count %lu), not both.\n", end_addr, item_count);
+                result.AppendErrorWithFormat("specify either the end address (0x%" PRIx64 ") or the count (--count %zu), not both.\n", end_addr, item_count);
                 result.SetStatus(eReturnStatusFailed);
                 return false;
             }
@@ -708,7 +708,7 @@ protected:
             }
             
             if (bytes_read < total_byte_size)
-                result.AppendWarningWithFormat("Not all bytes (%lu/%lu) were able to be read from 0x%" PRIx64 ".\n", bytes_read, total_byte_size, addr);
+                result.AppendWarningWithFormat("Not all bytes (%zu/%zu) were able to be read from 0x%" PRIx64 ".\n", bytes_read, total_byte_size, addr);
         }
         else
         {
@@ -860,16 +860,28 @@ protected:
         
         Format format = m_format_options.GetFormat();
         if ( ( (format == eFormatChar) || (format == eFormatCharPrintable) )
-            && (item_byte_size != 1)
-            && (item_count == 1))
+            && (item_byte_size != 1))
         {
-            // this turns requests such as
-            // memory read -fc -s10 -c1 *charPtrPtr
-            // which make no sense (what is a char of size 10?)
-            // into a request for fetching 10 chars of size 1 from the same memory location
-            format = eFormatCharArray;
-            item_count = item_byte_size;
-            item_byte_size = 1;
+            // if a count was not passed, or it is 1
+            if (m_format_options.GetCountValue().OptionWasSet() == false || item_count == 1)
+            {
+                // this turns requests such as
+                // memory read -fc -s10 -c1 *charPtrPtr
+                // which make no sense (what is a char of size 10?)
+                // into a request for fetching 10 chars of size 1 from the same memory location
+                format = eFormatCharArray;
+                item_count = item_byte_size;
+                item_byte_size = 1;
+            }
+            else
+            {
+                // here we passed a count, and it was not 1
+                // so we have a byte_size and a count
+                // we could well multiply those, but instead let's just fail
+                result.AppendErrorWithFormat("reading memory as characters of size %zu is not supported", item_byte_size);
+                result.SetStatus(eReturnStatusFailed);
+                return false;
+            }
         }
 
         assert (output_stream);
@@ -1220,7 +1232,7 @@ protected:
                 }
                 else if (!UIntValueIsValidForSize (uval64, item_byte_size))
                 {
-                    result.AppendErrorWithFormat ("Value 0x%" PRIx64 " is too large to fit in a %lu byte unsigned integer value.\n", uval64, item_byte_size);
+                    result.AppendErrorWithFormat ("Value 0x%" PRIx64 " is too large to fit in a %zu byte unsigned integer value.\n", uval64, item_byte_size);
                     result.SetStatus(eReturnStatusFailed);
                     return false;
                 }
@@ -1248,7 +1260,7 @@ protected:
                 }
                 else if (!UIntValueIsValidForSize (uval64, item_byte_size))
                 {
-                    result.AppendErrorWithFormat ("Value 0x%" PRIx64 " is too large to fit in a %lu byte unsigned integer value.\n", uval64, item_byte_size);
+                    result.AppendErrorWithFormat ("Value 0x%" PRIx64 " is too large to fit in a %zu byte unsigned integer value.\n", uval64, item_byte_size);
                     result.SetStatus(eReturnStatusFailed);
                     return false;
                 }
@@ -1288,7 +1300,7 @@ protected:
                 }
                 else if (!SIntValueIsValidForSize (sval64, item_byte_size))
                 {
-                    result.AppendErrorWithFormat ("Value %" PRIi64 " is too large or small to fit in a %lu byte signed integer value.\n", sval64, item_byte_size);
+                    result.AppendErrorWithFormat ("Value %" PRIi64 " is too large or small to fit in a %zu byte signed integer value.\n", sval64, item_byte_size);
                     result.SetStatus(eReturnStatusFailed);
                     return false;
                 }
@@ -1305,7 +1317,7 @@ protected:
                 }
                 else if (!UIntValueIsValidForSize (uval64, item_byte_size))
                 {
-                    result.AppendErrorWithFormat ("Value %" PRIu64 " is too large to fit in a %lu byte unsigned integer value.\n", uval64, item_byte_size);
+                    result.AppendErrorWithFormat ("Value %" PRIu64 " is too large to fit in a %zu byte unsigned integer value.\n", uval64, item_byte_size);
                     result.SetStatus(eReturnStatusFailed);
                     return false;
                 }
@@ -1322,7 +1334,7 @@ protected:
                 }
                 else if (!UIntValueIsValidForSize (uval64, item_byte_size))
                 {
-                    result.AppendErrorWithFormat ("Value %" PRIo64 " is too large to fit in a %lu byte unsigned integer value.\n", uval64, item_byte_size);
+                    result.AppendErrorWithFormat ("Value %" PRIo64 " is too large to fit in a %zu byte unsigned integer value.\n", uval64, item_byte_size);
                     result.SetStatus(eReturnStatusFailed);
                     return false;
                 }

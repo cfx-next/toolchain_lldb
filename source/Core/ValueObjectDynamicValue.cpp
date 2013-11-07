@@ -69,10 +69,10 @@ ValueObjectDynamicValue::GetTypeName()
     const bool success = UpdateValueIfNeeded(false);
     if (success)
     {
-        if (m_dynamic_type_info.HasType())
-            return GetClangType().GetConstTypeName();
         if (m_dynamic_type_info.HasName())
             return m_dynamic_type_info.GetName();
+        if (m_dynamic_type_info.HasType())
+            return GetClangType().GetConstTypeName();
     }
     return m_parent->GetTypeName();
 }
@@ -81,7 +81,7 @@ TypeImpl
 ValueObjectDynamicValue::GetTypeImpl ()
 {
     const bool success = UpdateValueIfNeeded(false);
-    if (success)
+    if (success && m_type_impl.IsValid())
     {
         return m_type_impl;
     }
@@ -94,10 +94,10 @@ ValueObjectDynamicValue::GetQualifiedTypeName()
     const bool success = UpdateValueIfNeeded(false);
     if (success)
     {
-        if (m_dynamic_type_info.HasType())
-            return GetClangType().GetConstQualifiedTypeName ();
         if (m_dynamic_type_info.HasName())
             return m_dynamic_type_info.GetName();
+        if (m_dynamic_type_info.HasType())
+            return GetClangType().GetConstQualifiedTypeName ();
     }
     return m_parent->GetTypeName();
 }
@@ -155,6 +155,8 @@ FixupTypeAndOrName (const TypeAndOrName& type_andor_name,
             corrected_name.append(" *");
         else if (parent.IsPointerOrReferenceType())
             corrected_name.append(" &");
+        // the parent type should be a correctly pointer'ed or referenc'ed type
+        ret.SetClangASTType(parent.GetClangType());
         ret.SetName(corrected_name.c_str());
     }
     return ret;
@@ -225,12 +227,29 @@ ValueObjectDynamicValue::UpdateValue ()
     
     m_update_point.SetUpdated();
 
-    // if the runtime only vended a ClangASTType, then we have an hollow type that we don't want to use
-    // but we save it for the TypeImpl, which can still use an hollow type for some questions
-    if (found_dynamic_type && class_type_or_name.HasType() && !class_type_or_name.HasTypeSP())
+    if (found_dynamic_type)
     {
-        m_type_impl = TypeImpl(m_parent->GetClangType(),FixupTypeAndOrName(class_type_or_name, *m_parent).GetClangASTType());
-        class_type_or_name.SetClangASTType(ClangASTType());
+        if (class_type_or_name.HasType())
+        {
+            // TypeSP are always generated from debug info
+            if (!class_type_or_name.HasTypeSP() && class_type_or_name.GetClangASTType().IsRuntimeGeneratedType())
+            {
+                m_type_impl = TypeImpl(m_parent->GetClangType(),FixupTypeAndOrName(class_type_or_name, *m_parent).GetClangASTType());
+                class_type_or_name.SetClangASTType(ClangASTType());
+            }
+            else
+            {
+                m_type_impl = TypeImpl(FixupTypeAndOrName(class_type_or_name, *m_parent).GetClangASTType());
+            }
+        }
+        else
+        {
+            m_type_impl.Clear();
+        }
+    }
+    else
+    {
+        m_type_impl.Clear();
     }
     
     // If we don't have a dynamic type, then make ourselves just a echo of our parent.

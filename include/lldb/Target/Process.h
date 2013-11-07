@@ -1757,7 +1757,7 @@ public:
         error.SetErrorStringWithFormat("error: %s does not support loading core files.", GetPluginName().GetCString());
         return error;
     }
-    
+
     //------------------------------------------------------------------
     /// Get the dynamic loader plug-in for this process. 
     ///
@@ -1769,6 +1769,16 @@ public:
     //------------------------------------------------------------------
     virtual DynamicLoader *
     GetDynamicLoader ();
+
+    //------------------------------------------------------------------
+    /// Get the system runtime plug-in for this process. 
+    ///
+    /// @return
+    ///   Returns a pointer to the SystemRuntime plugin for this Process
+    ///   if one is available.  Else returns NULL.
+    //------------------------------------------------------------------
+    virtual SystemRuntime *
+    GetSystemRuntime ();
 
     //------------------------------------------------------------------
     /// Attach to an existing process using the process attach info.
@@ -2492,11 +2502,7 @@ public:
     ExecutionResults
     RunThreadPlan (ExecutionContext &exe_ctx,    
                     lldb::ThreadPlanSP &thread_plan_sp,
-                    bool stop_others,
-                    bool run_others,
-                    bool unwind_on_error,
-                    bool ignore_breakpoints,
-                    uint32_t timeout_usec,
+                    const EvaluateExpressionOptions &options,
                     Stream &errors);
 
     static const char *
@@ -3295,6 +3301,12 @@ public:
         return m_thread_list;
     }
     
+    ThreadList::ThreadIterable
+    Threads ()
+    {
+        return m_thread_list.Threads();
+    }
+    
     uint32_t
     GetNextThreadIndexID (uint64_t thread_id);
     
@@ -3667,6 +3679,7 @@ protected:
     std::unique_ptr<DynamicLoader> m_dyld_ap;
     std::unique_ptr<DynamicCheckerFunctions> m_dynamic_checkers_ap; ///< The functions used by the expression parser to validate data that expressions use.
     std::unique_ptr<OperatingSystem> m_os_ap;
+    std::unique_ptr<SystemRuntime> m_system_runtime_ap;
     UnixSignals                 m_unix_signals;         /// This is the current signal set for this process.
     lldb::ABISP                 m_abi_sp;
     lldb::InputReaderSP         m_process_input_reader;

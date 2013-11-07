@@ -35,6 +35,7 @@
 #include "lldb/Target/Platform.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/StopInfo.h"
+#include "lldb/Target/SystemRuntime.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/TargetList.h"
 #include "lldb/Target/Thread.h"
@@ -1143,6 +1144,7 @@ Process::Finalize()
     m_dynamic_checkers_ap.reset();
     m_abi_sp.reset();
     m_os_ap.reset();
+    m_system_runtime_ap.reset();
     m_dyld_ap.reset();
     m_thread_list_real.Destroy();
     m_thread_list.Destroy();
@@ -1814,35 +1816,36 @@ Process::LoadImage (const FileSpec &image_spec, Error &error)
             {
                 ExecutionContext exe_ctx;
                 frame_sp->CalculateExecutionContext (exe_ctx);
-                const bool unwind_on_error = true;
-                const bool ignore_breakpoints = true;
+                EvaluateExpressionOptions expr_options;
+                expr_options.SetUnwindOnError(true);
+                expr_options.SetIgnoreBreakpoints(true);
+                expr_options.SetExecutionPolicy(eExecutionPolicyAlways);
                 StreamString expr;
                 expr.Printf("dlopen (\"%s\", 2)", path);
                 const char *prefix = "extern \"C\" void* dlopen (const char *path, int mode);\n";
                 lldb::ValueObjectSP result_valobj_sp;
+                Error expr_error;
                 ClangUserExpression::Evaluate (exe_ctx,
-                                               eExecutionPolicyAlways,
-                                               lldb::eLanguageTypeUnknown,
-                                               ClangUserExpression::eResultTypeAny,
-                                               unwind_on_error,
-                                               ignore_breakpoints,
+                                               expr_options,
                                                expr.GetData(),
                                                prefix,
                                                result_valobj_sp,
-                                               true,
-                                               ClangUserExpression::kDefaultTimeout);
-                error = result_valobj_sp->GetError();
-                if (error.Success())
+                                               expr_error);
+                if (expr_error.Success())
                 {
-                    Scalar scalar;
-                    if (result_valobj_sp->ResolveValue (scalar))
+                    error = result_valobj_sp->GetError();
+                    if (error.Success())
                     {
-                        addr_t image_ptr = scalar.ULongLong(LLDB_INVALID_ADDRESS);
-                        if (image_ptr != 0 && image_ptr != LLDB_INVALID_ADDRESS)
+                        Scalar scalar;
+                        if (result_valobj_sp->ResolveValue (scalar))
                         {
-                            uint32_t image_token = m_image_tokens.size();
-                            m_image_tokens.push_back (image_ptr);
-                            return image_token;
+                            addr_t image_ptr = scalar.ULongLong(LLDB_INVALID_ADDRESS);
+                            if (image_ptr != 0 && image_ptr != LLDB_INVALID_ADDRESS)
+                            {
+                                uint32_t image_token = m_image_tokens.size();
+                                m_image_tokens.push_back (image_ptr);
+                                return image_token;
+                            }
                         }
                     }
                 }
@@ -1891,23 +1894,21 @@ Process::UnloadImage (uint32_t image_token)
                     {
                         ExecutionContext exe_ctx;
                         frame_sp->CalculateExecutionContext (exe_ctx);
-                        const bool unwind_on_error = true;
-                        const bool ignore_breakpoints = true;
+                        EvaluateExpressionOptions expr_options;
+                        expr_options.SetUnwindOnError(true);
+                        expr_options.SetIgnoreBreakpoints(true);
+                        expr_options.SetExecutionPolicy(eExecutionPolicyAlways);
                         StreamString expr;
                         expr.Printf("dlclose ((void *)0x%" PRIx64 ")", image_addr);
                         const char *prefix = "extern \"C\" int dlclose(void* handle);\n";
                         lldb::ValueObjectSP result_valobj_sp;
+                        Error expr_error;
                         ClangUserExpression::Evaluate (exe_ctx,
-                                                       eExecutionPolicyAlways,
-                                                       lldb::eLanguageTypeUnknown,
-                                                       ClangUserExpression::eResultTypeAny,
-                                                       unwind_on_error,
-                                                       ignore_breakpoints,
+                                                       expr_options,
                                                        expr.GetData(),
                                                        prefix,
                                                        result_valobj_sp,
-                                                       true,
-                                                       ClangUserExpression::kDefaultTimeout);
+                                                       expr_error);
                         if (result_valobj_sp->GetError().Success())
                         {
                             Scalar scalar;
@@ -2877,6 +2878,7 @@ Process::Launch (const ProcessLaunchInfo &launch_info)
     Error error;
     m_abi_sp.reset();
     m_dyld_ap.reset();
+    m_system_runtime_ap.reset();
     m_os_ap.reset();
     m_process_input_reader.reset();
 
@@ -2945,6 +2947,10 @@ Process::Launch (const ProcessLaunchInfo &launch_info)
                         if (dyld)
                             dyld->DidLaunch();
 
+                        SystemRuntime *system_runtime = GetSystemRuntime ();
+                        if (system_runtime)
+                            system_runtime->DidLaunch();
+
                         m_os_ap.reset (OperatingSystem::FindPlugin (this, NULL));
                         // This delays passing the stopped event to listeners till DidLaunch gets
                         // a chance to complete...
@@ -2988,6 +2994,10 @@ Process::LoadCore ()
         if (dyld)
             dyld->DidAttach();
         
+        SystemRuntime *system_runtime = GetSystemRuntime ();
+        if (system_runtime)
+            system_runtime->DidAttach();
+
         m_os_ap.reset (OperatingSystem::FindPlugin (this, NULL));
         // We successfully loaded a core file, now pretend we stopped so we can
         // show all of the threads in the core file and explore the crashed
@@ -3004,6 +3014,14 @@ Process::GetDynamicLoader ()
     if (m_dyld_ap.get() == NULL)
         m_dyld_ap.reset (DynamicLoader::FindPlugin(this, NULL));
     return m_dyld_ap.get();
+}
+
+SystemRuntime *
+Process::GetSystemRuntime ()
+{
+    if (m_system_runtime_ap.get() == NULL)
+        m_system_runtime_ap.reset (SystemRuntime::FindPlugin(this));
+    return m_system_runtime_ap.get();
 }
 
 
@@ -3068,6 +3086,7 @@ Process::Attach (ProcessAttachInfo &attach_info)
     m_abi_sp.reset();
     m_process_input_reader.reset();
     m_dyld_ap.reset();
+    m_system_runtime_ap.reset();
     m_os_ap.reset();
     
     lldb::pid_t attach_pid = attach_info.GetProcessID();
@@ -3239,6 +3258,10 @@ Process::CompleteAttach ()
     DynamicLoader *dyld = GetDynamicLoader ();
     if (dyld)
         dyld->DidAttach();
+
+    SystemRuntime *system_runtime = GetSystemRuntime ();
+    if (system_runtime)
+        system_runtime->DidAttach();
 
     m_os_ap.reset (OperatingSystem::FindPlugin (this, NULL));
     // Figure out which one is the executable, and set that in our target:
@@ -4674,11 +4697,7 @@ Process::SettingsTerminate ()
 ExecutionResults
 Process::RunThreadPlan (ExecutionContext &exe_ctx,
                         lldb::ThreadPlanSP &thread_plan_sp,
-                        bool stop_others,
-                        bool run_others,
-                        bool unwind_on_error,
-                        bool ignore_breakpoints,
-                        uint32_t timeout_usec,
+                        const EvaluateExpressionOptions &options,
                         Stream &errors)
 {
     ExecutionResults return_value = eExecutionSetupError;
@@ -4789,6 +4808,17 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
     
     thread->QueueThreadPlan(thread_plan_sp, false); // This used to pass "true" does that make sense?
     
+    if (options.GetDebug())
+    {
+        // In this case, we aren't actually going to run, we just want to stop right away.
+        // Flush this thread so we will refetch the stacks and show the correct backtrace.
+        // FIXME: To make this prettier we should invent some stop reason for this, but that
+        // is only cosmetic, and this functionality is only of use to lldb developers who can
+        // live with not pretty...
+        thread->Flush();
+        return eExecutionStoppedForDebug;
+    }
+    
     Listener listener("lldb.process.listener.run-thread-plan");
     
     lldb::EventSP event_to_broadcast_sp;
@@ -4830,11 +4860,12 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
         TimeValue one_thread_timeout = TimeValue::Now();
         TimeValue final_timeout = one_thread_timeout;
         
-        if (run_others)
+        uint32_t timeout_usec = options.GetTimeoutUsec();
+        if (options.GetTryAllThreads())
         {
             // If we are running all threads then we take half the time to run all threads, bounded by
             // .25 sec.
-            if (timeout_usec == 0)
+            if (options.GetTimeoutUsec() == 0)
                 one_thread_timeout.OffsetWithMicroSeconds(default_one_thread_timeout_usec);
             else
             {
@@ -4946,7 +4977,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
                         
             if (before_first_timeout)
             {
-                if (run_others)
+                if (options.GetTryAllThreads())
                     timeout_ptr = &one_thread_timeout;
                 else
                 {
@@ -5062,7 +5093,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
                                                 if (log)
                                                     log->Printf ("Process::RunThreadPlan() stopped for breakpoint: %s.", stop_info_sp->GetDescription());
                                                 return_value = eExecutionHitBreakpoint;
-                                                if (!ignore_breakpoints)
+                                                if (!options.DoesIgnoreBreakpoints())
                                                 {
                                                     event_to_broadcast_sp = event_sp;
                                                 }
@@ -5071,7 +5102,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
                                             {
                                                 if (log)
                                                     log->PutCString ("Process::RunThreadPlan(): thread plan didn't successfully complete.");
-                                                if (!unwind_on_error)
+                                                if (!options.DoesUnwindOnError())
                                                     event_to_broadcast_sp = event_sp;
                                                 return_value = eExecutionInterrupted;
                                             }
@@ -5122,7 +5153,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
                 // either exit, or try with all threads running for the same timeout.
                 
                 if (log) {
-                    if (run_others)
+                    if (options.GetTryAllThreads())
                     {
                         uint64_t remaining_time = final_timeout - TimeValue::Now();
                         if (before_first_timeout)
@@ -5205,7 +5236,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
                                     continue;
                                 }
 
-                                if (!run_others)
+                                if (!options.GetTryAllThreads())
                                 {
                                     if (log)
                                         log->PutCString ("Process::RunThreadPlan(): try_all_threads was false, we stopped so now we're quitting.");
@@ -5278,8 +5309,8 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
         // 1) The execution successfully completed
         // 2) We hit a breakpoint, and ignore_breakpoints was true
         // 3) We got some other error, and discard_on_error was true
-        bool should_unwind = (return_value == eExecutionInterrupted && unwind_on_error)
-                             || (return_value == eExecutionHitBreakpoint && ignore_breakpoints);
+        bool should_unwind = (return_value == eExecutionInterrupted && options.DoesUnwindOnError())
+                             || (return_value == eExecutionHitBreakpoint && options.DoesIgnoreBreakpoints());
         
         if (return_value == eExecutionCompleted
             || should_unwind)
@@ -5399,7 +5430,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
             if (log)
                 log->PutCString("Process::RunThreadPlan(): execution set up error.");
                 
-            if (unwind_on_error)
+            if (options.DoesUnwindOnError())
             {
                 thread->DiscardThreadPlansUpToPlan (thread_plan_sp);
                 thread_plan_sp->SetPrivate (orig_plan_private);
@@ -5423,7 +5454,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
             {
                 if (log)
                     log->PutCString("Process::RunThreadPlan(): thread plan stopped in mid course");
-                if (unwind_on_error && thread_plan_sp)
+                if (options.DoesUnwindOnError() && thread_plan_sp)
                 {
                     if (log)
                         log->PutCString("Process::RunThreadPlan(): discarding thread plan 'cause unwind_on_error is set.");
@@ -5494,6 +5525,9 @@ Process::ExecutionResultAsCString (ExecutionResults result)
             break;
         case eExecutionTimedOut:
             result_name = "eExecutionTimedOut";
+            break;
+        case eExecutionStoppedForDebug:
+            result_name = "eExecutionStoppedForDebug";
             break;
     }
     return result_name;
@@ -5610,11 +5644,10 @@ Process::DidExec ()
 {
     Target &target = GetTarget();
     target.CleanupProcess ();
-    ModuleList unloaded_modules (target.GetImages());
-    target.ModulesDidUnload (unloaded_modules);
-    target.GetSectionLoadList().Clear();
+    target.ClearModules();
     m_dynamic_checkers_ap.reset();
     m_abi_sp.reset();
+    m_system_runtime_ap.reset();
     m_os_ap.reset();
     m_dyld_ap.reset();
     m_image_tokens.clear();
@@ -5624,4 +5657,8 @@ Process::DidExec ()
     m_memory_cache.Clear(true);
     DoDidExec();
     CompleteAttach ();
+    // Flush the process (threads and all stack frames) after running CompleteAttach()
+    // in case the dynamic loader loaded things in new locations.
+    Flush();
 }
+

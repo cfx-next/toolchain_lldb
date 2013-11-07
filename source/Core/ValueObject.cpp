@@ -272,6 +272,7 @@ ValueObject::SetNeedsUpdate ()
 void
 ValueObject::ClearDynamicTypeInformation ()
 {
+    m_children_count_valid = false;
     m_did_calculate_complete_objc_class_type = false;
     m_last_format_mgr_revision = 0;
     m_override_type = ClangASTType();
@@ -1029,7 +1030,7 @@ ValueObject::GetPointeeData (DataExtractor& data,
                     {
                         heap_buf_ptr->SetByteSize(bytes);
                         size_t bytes_read = process->ReadMemory(addr + offset, heap_buf_ptr->GetBytes(), bytes, error);
-                        if (error.Success())
+                        if (error.Success() || bytes_read > 0)
                         {
                             data.SetData(data_sp);
                             return bytes_read;
@@ -1539,6 +1540,27 @@ ValueObject::GetValueAsUnsigned (uint64_t fail_value, bool *success)
     if (success)
         *success = false;
     return fail_value;
+}
+
+int64_t
+ValueObject::GetValueAsSigned (int64_t fail_value, bool *success)
+{
+    // If our byte size is zero this is an aggregate type that has children
+    if (!GetClangType().IsAggregateType())
+    {
+        Scalar scalar;
+        if (ResolveValue (scalar))
+        {
+            if (success)
+                *success = true;
+                return scalar.SLongLong(fail_value);
+        }
+        // fallthrough, otherwise...
+    }
+    
+    if (success)
+        *success = false;
+        return fail_value;
 }
 
 // if any more "special cases" are added to ValueObject::DumpPrintableRepresentation() please keep
