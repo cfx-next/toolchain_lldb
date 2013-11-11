@@ -1023,6 +1023,7 @@ Process::Process(Target &target, Listener &listener) :
     m_thread_mutex (Mutex::eMutexTypeRecursive),
     m_thread_list_real (this),
     m_thread_list (this),
+    m_extended_thread_list (this),
     m_notifications (),
     m_image_tokens (),
     m_listener (listener),
@@ -1148,6 +1149,7 @@ Process::Finalize()
     m_dyld_ap.reset();
     m_thread_list_real.Destroy();
     m_thread_list.Destroy();
+    m_extended_thread_list.Destroy();
     std::vector<Notifications> empty_notifications;
     m_notifications.swap(empty_notifications);
     m_image_tokens.clear();
@@ -1592,6 +1594,8 @@ Process::UpdateThreadListIfNeeded ()
                 m_thread_list.Update (new_thread_list);
                 m_thread_list.SetStopID (stop_id);
             }
+            // Clear any extended threads that we may have accumulated previously
+            m_extended_thread_list.Clear();
         }
     }
 }
@@ -5644,7 +5648,7 @@ Process::DidExec ()
 {
     Target &target = GetTarget();
     target.CleanupProcess ();
-    target.ClearModules();
+    target.ClearModules(false);
     m_dynamic_checkers_ap.reset();
     m_abi_sp.reset();
     m_system_runtime_ap.reset();
@@ -5660,5 +5664,9 @@ Process::DidExec ()
     // Flush the process (threads and all stack frames) after running CompleteAttach()
     // in case the dynamic loader loaded things in new locations.
     Flush();
+    
+    // After we figure out what was loaded/unloaded in CompleteAttach,
+    // we need to let the target know so it can do any cleanup it needs to.
+    target.DidExec();
 }
 
