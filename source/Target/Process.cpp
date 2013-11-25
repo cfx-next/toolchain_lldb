@@ -1024,6 +1024,7 @@ Process::Process(Target &target, Listener &listener) :
     m_thread_list_real (this),
     m_thread_list (this),
     m_extended_thread_list (this),
+    m_extended_thread_stop_id (0),
     m_notifications (),
     m_image_tokens (),
     m_listener (listener),
@@ -1593,9 +1594,14 @@ Process::UpdateThreadListIfNeeded ()
                 m_thread_list_real.Update(real_thread_list);
                 m_thread_list.Update (new_thread_list);
                 m_thread_list.SetStopID (stop_id);
+
+                if (GetLastNaturalStopID () != m_extended_thread_stop_id)
+                {
+                    // Clear any extended threads that we may have accumulated previously
+                    m_extended_thread_list.Clear();
+                    m_extended_thread_stop_id = GetLastNaturalStopID ();
+                }
             }
-            // Clear any extended threads that we may have accumulated previously
-            m_extended_thread_list.Clear();
         }
     }
 }
@@ -2107,12 +2113,37 @@ Process::CreateBreakpointSite (const BreakpointLocationSP &owner, bool use_hardw
                 }
                 else
                 {
-                    // Report error for setting breakpoint...
-                    m_target.GetDebugger().GetErrorFile().Printf ("warning: failed to set breakpoint site at 0x%" PRIx64 " for breakpoint %i.%i: %s\n",
-                                                                  load_addr,
-                                                                  owner->GetBreakpoint().GetID(),
-                                                                  owner->GetID(),
-                                                                  error.AsCString() ? error.AsCString() : "unkown error");
+                    bool show_error = true;
+                    switch (GetState())
+                    {
+                        case eStateInvalid:
+                        case eStateUnloaded:
+                        case eStateConnected:
+                        case eStateAttaching:
+                        case eStateLaunching:
+                        case eStateDetached:
+                        case eStateExited:
+                            show_error = false;
+                            break;
+                            
+                        case eStateStopped:
+                        case eStateRunning:
+                        case eStateStepping:
+                        case eStateCrashed:
+                        case eStateSuspended:
+                            show_error = IsAlive();
+                            break;
+                    }
+                    
+                    if (show_error)
+                    {
+                        // Report error for setting breakpoint...
+                        m_target.GetDebugger().GetErrorFile().Printf ("warning: failed to set breakpoint site at 0x%" PRIx64 " for breakpoint %i.%i: %s\n",
+                                                                      load_addr,
+                                                                      owner->GetBreakpoint().GetID(),
+                                                                      owner->GetID(),
+                                                                      error.AsCString() ? error.AsCString() : "unkown error");
+                    }
                 }
             }
         }
@@ -2354,6 +2385,7 @@ Process::DisableSoftwareBreakpoint (BreakpointSite *bp_site)
 size_t
 Process::ReadMemory (addr_t addr, void *buf, size_t size, Error &error)
 {
+    error.Clear();
     if (!GetDisableMemoryCache())
     {        
 #if defined (VERIFY_MEMORY_READS)
@@ -2877,7 +2909,7 @@ Process::WaitForProcessStopPrivate (const TimeValue *timeout, EventSP &event_sp)
 }
 
 Error
-Process::Launch (const ProcessLaunchInfo &launch_info)
+Process::Launch (ProcessLaunchInfo &launch_info)
 {
     Error error;
     m_abi_sp.reset();
@@ -2895,6 +2927,13 @@ Process::Launch (const ProcessLaunchInfo &launch_info)
         exe_module->GetPlatformFileSpec().GetPath(platform_exec_file_path, sizeof(platform_exec_file_path));
         if (exe_module->GetFileSpec().Exists())
         {
+            // Install anything that might need to be installed prior to launching.
+            // For host systems, this will do nothing, but if we are connected to a
+            // remote platform it will install any needed binaries
+            error = GetTarget().Install(&launch_info);
+            if (error.Fail())
+                return error;
+
             if (PrivateStateThreadIsValid ())
                 PausePrivateStateThread ();
     

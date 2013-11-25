@@ -152,6 +152,7 @@ INTERFACE_FILES="${SRC_ROOT}/scripts/Python/interface/SBAddress.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBListener.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBModule.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBModuleSpec.i"\
+" ${SRC_ROOT}/scripts/Python/interface/SBPlatform.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBProcess.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBSourceManager.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBStream.i"\
@@ -358,20 +359,5 @@ then
     python ${current_dir}/modify-python-lldb.py ${CONFIG_BUILD_DIR}
 fi
 
-# Fix the "#include" statement in the swig output file
-
-if [ -f "${current_dir}/edit-swig-python-wrapper-file.py" ]
-then
-    if [ $MakefileCalled -eq 1 ]
-    then
-        python ${current_dir}/edit-swig-python-wrapper-file.py "${TARGET_DIR}"
-    else
-        python ${current_dir}/edit-swig-python-wrapper-file.py
-    fi
-    if [ -f "${swig_output_file}.edited" ]
-    then
-        mv "${swig_output_file}.edited" ${swig_output_file}
-    fi
-fi
 
 fi

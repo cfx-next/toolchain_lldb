@@ -26,7 +26,6 @@ class CrashingRecursiveInferiorTestCase(TestBase):
         self.buildDsym()
         self.recursive_inferior_crashing_registers()
 
-    @expectedFailureFreeBSD('llvm.org/pr17184')
     def test_recursive_inferior_crashing_register_dwarf(self):
         """Test that lldb reliably reads registers from the inferior after crashing (command)."""
         self.buildDwarf()
@@ -44,7 +43,6 @@ class CrashingRecursiveInferiorTestCase(TestBase):
         self.buildDsym()
         self.recursive_inferior_crashing_expr()
 
-    @expectedFailureFreeBSD('llvm.org/pr17184')
     def test_recursive_inferior_crashing_expr_dwarf(self):
         """Test that the lldb expression interpreter can read from the inferior after crashing (command)."""
         self.buildDwarf()
@@ -80,7 +78,7 @@ class CrashingRecursiveInferiorTestCase(TestBase):
         self.buildDsym()
         self.recursive_inferior_crashing_expr_step_expr()
 
-    @expectedFailureFreeBSD('llvm.org/pr17184')
+    @expectedFailureFreeBSD('llvm.org/pr15989') # Couldn't allocate space for the stack frame
     @expectedFailureLinux # llvm.org/pr15989 - Couldn't allocate space for the stack frame
     def test_recursive_inferior_crashing_expr_step_and_expr_dwarf(self):
         """Test that lldb expressions work before and after stepping after a crash."""
