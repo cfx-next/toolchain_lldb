@@ -10,7 +10,7 @@ from lldbtest import *
 
 class ObjCDynamicValueTestCase(TestBase):
 
-    mydir = os.path.join("lang", "objc", "objc-baseclass-sbtype")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -52,7 +52,7 @@ class ObjCDynamicValueTestCase(TestBase):
         # Set up our breakpoints:
 
         target.BreakpointCreateByLocation('main.m', self.line)
-        process = target.LaunchSimple (None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(process.GetState() == lldb.eStateStopped,
                         PROCESS_STOPPED)

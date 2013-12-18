@@ -7,7 +7,7 @@ from lldbtest import *
 
 class AssertingInferiorTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "inferior-assert")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @unittest2.expectedFailure("rdar://15367233")
@@ -119,7 +119,7 @@ class AssertingInferiorTestCase(TestBase):
 
         # Now launch the process, and do not stop at entry point.
         # Both argv and envp are null.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         if process.GetState() != lldb.eStateStopped:
             self.fail("Process should be in the 'stopped' state, "
@@ -154,7 +154,7 @@ class AssertingInferiorTestCase(TestBase):
         self.assertTrue(target, VALID_TARGET)
 
         # Launch the process, and do not stop at the entry point.
-        target.LaunchSimple(None, None, os.getcwd())
+        target.LaunchSimple (None, None, self.get_process_working_directory())
         self.check_stop_reason()
 
         process = target.GetProcess()
@@ -200,7 +200,7 @@ class AssertingInferiorTestCase(TestBase):
         self.assertTrue(target, VALID_TARGET)
 
         # Launch the process, and do not stop at the entry point.
-        target.LaunchSimple(None, None, os.getcwd())
+        target.LaunchSimple (None, None, self.get_process_working_directory())
         self.check_stop_reason()
 
         process = target.GetProcess()
@@ -222,7 +222,7 @@ class AssertingInferiorTestCase(TestBase):
 
         # Launch the process, and do not stop at the entry point.
         self.set_breakpoint(self.line)
-        target.LaunchSimple(None, None, os.getcwd())
+        target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.expect("thread list", STOPPED_DUE_TO_BREAKPOINT,
             substrs = ['main.c:%d' % self.line,

@@ -11,7 +11,7 @@ import lldbutil
 
 class RegisterCommandsTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "register")
+    mydir = TestBase.compute_mydir(__file__)
 
     def setUp(self):
         TestBase.setUp(self)
@@ -19,42 +19,45 @@ class RegisterCommandsTestCase(TestBase):
 
     def test_register_commands(self):
         """Test commands related to registers, in particular vector registers."""
-        if not self.getArchitecture() in ['i386', 'x86_64']:
-            self.skipTest("This test requires i386 or x86_64 as the architecture for the inferior")
+        if not self.getArchitecture() in ['amd64', 'i386', 'x86_64']:
+            self.skipTest("This test requires x86 or x86_64 as the architecture for the inferior")
         self.buildDefault()
         self.register_commands()
 
     def test_fp_register_write(self):
         """Test commands that write to registers, in particular floating-point registers."""
-        if not self.getArchitecture() in ['i386', 'x86_64']:
-            self.skipTest("This test requires i386 or x86_64 as the architecture for the inferior")
+        if not self.getArchitecture() in ['amd64', 'i386', 'x86_64']:
+            self.skipTest("This test requires x86 or x86_64 as the architecture for the inferior")
         self.buildDefault()
         self.fp_register_write()
 
     def test_register_expressions(self):
         """Test expression evaluation with commands related to registers."""
-        if not self.getArchitecture() in ['i386', 'x86_64']:
-            self.skipTest("This test requires i386 or x86_64 as the architecture for the inferior")
+        if not self.getArchitecture() in ['amd64', 'i386', 'x86_64']:
+            self.skipTest("This test requires x86 or x86_64 as the architecture for the inferior")
         self.buildDefault()
         self.register_expressions()
 
     def test_convenience_registers(self):
         """Test convenience registers."""
-        if not self.getArchitecture() in ['x86_64']:
+        if not self.getArchitecture() in ['amd64', 'x86_64']:
             self.skipTest("This test requires x86_64 as the architecture for the inferior")
         self.buildDefault()
         self.convenience_registers()
 
+    @skipIfFreeBSD # llvm.org/pr16684
     def test_convenience_registers_with_process_attach(self):
         """Test convenience registers after a 'process attach'."""
-        if not self.getArchitecture() in ['x86_64']:
+        if not self.getArchitecture() in ['amd64', 'x86_64']:
             self.skipTest("This test requires x86_64 as the architecture for the inferior")
         self.buildDefault()
         self.convenience_registers_with_process_attach(test_16bit_regs=False)
 
+    @skipIfFreeBSD # llvm.org/pr18230
+    @expectedFailureFreeBSD("llvm.org/pr18200")
     def test_convenience_registers_16bit_with_process_attach(self):
         """Test convenience registers after a 'process attach'."""
-        if not self.getArchitecture() in ['x86_64']:
+        if not self.getArchitecture() in ['amd64', 'x86_64']:
             self.skipTest("This test requires x86_64 as the architecture for the inferior")
         self.buildDefault()
         self.convenience_registers_with_process_attach(test_16bit_regs=True)
@@ -152,7 +155,7 @@ class RegisterCommandsTestCase(TestBase):
         lldbutil.run_break_set_by_symbol (self, "main", num_expected_locations=-1)
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         process = target.GetProcess()
         self.assertTrue(process.GetState() == lldb.eStateStopped,
@@ -188,7 +191,7 @@ class RegisterCommandsTestCase(TestBase):
 
         self.runCmd("register write " + st0regname + " \"{0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00}\"")
         self.expect("register read " + st0regname + " --format f",
-            substrs = ['stmm0 = 0'])
+            substrs = [st0regname + ' = 0'])
 
         has_avx = False 
         registerSets = currentFrame.GetRegisters() # Returns an SBValueList.

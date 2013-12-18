@@ -167,34 +167,6 @@ namespace {
     
 } // anonymous namespace end
 
-static bool rand_initialized = false;
-
-// TODO Randomly assigning a port is unsafe.  We should get an unused
-// ephemeral port from the kernel and make sure we reserve it before passing
-// it to debugserver.
-
-#if defined (__APPLE__)
-#define LOW_PORT    (IPPORT_RESERVED)
-#define HIGH_PORT   (IPPORT_HIFIRSTAUTO)
-#else
-#define LOW_PORT    (1024u)
-#define HIGH_PORT   (49151u)
-#endif
-
-static inline uint16_t
-get_random_port ()
-{
-    if (!rand_initialized)
-    {
-        time_t seed = time(NULL);
-
-        rand_initialized = true;
-        srand(seed);
-    }
-    return (rand() % (HIGH_PORT - LOW_PORT)) + LOW_PORT;
-}
-
-
 lldb_private::ConstString
 ProcessGDBRemote::GetPluginNameStatic()
 {
@@ -386,7 +358,7 @@ ProcessGDBRemote::BuildDynamicRegisterInfo (bool force)
         const int packet_len = ::snprintf (packet, sizeof(packet), "qRegisterInfo%x", reg_num);
         assert (packet_len < (int)sizeof(packet));
         StringExtractorGDBRemote response;
-        if (m_gdb_comm.SendPacketAndWaitForResponse(packet, packet_len, response, false))
+        if (m_gdb_comm.SendPacketAndWaitForResponse(packet, packet_len, response, false) == GDBRemoteCommunication::PacketResult::Success)
         {
             response_type = response.GetResponseType();
             if (response_type == StringExtractorGDBRemote::eResponse)
@@ -645,7 +617,7 @@ ProcessGDBRemote::DoConnectRemote (Stream *strm, const char *remote_url)
         // We have a valid process
         SetID (pid);
         GetThreadList();
-        if (m_gdb_comm.SendPacketAndWaitForResponse("?", 1, m_last_stop_packet, false))
+        if (m_gdb_comm.SendPacketAndWaitForResponse("?", 1, m_last_stop_packet, false) == GDBRemoteCommunication::PacketResult::Success)
         {
             if (!m_target.GetArchitecture().IsValid()) { // Make sure we have an architecture
                m_target.SetArchitecture(m_gdb_comm.GetProcessArchitecture());
@@ -690,7 +662,7 @@ ProcessGDBRemote::WillLaunchOrAttach ()
 // Process Control
 //----------------------------------------------------------------------
 Error
-ProcessGDBRemote::DoLaunch (Module *exe_module, const ProcessLaunchInfo &launch_info)
+ProcessGDBRemote::DoLaunch (Module *exe_module, ProcessLaunchInfo &launch_info)
 {
     Error error;
 
@@ -728,23 +700,10 @@ ProcessGDBRemote::DoLaunch (Module *exe_module, const ProcessLaunchInfo &launch_
     ObjectFile * object_file = exe_module->GetObjectFile();
     if (object_file)
     {
-        char host_port[128];
-        snprintf (host_port, sizeof(host_port), "localhost:%u", get_random_port ());
-        char connect_url[128];
-        snprintf (connect_url, sizeof(connect_url), "connect://%s", host_port);
-
         // Make sure we aren't already connected?
         if (!m_gdb_comm.IsConnected())
         {
-            error = StartDebugserverProcess (host_port, launch_info);
-            if (error.Fail())
-            {
-                if (log)
-                    log->Printf("failed to start debugserver process: %s", error.AsCString());
-                return error;
-            }
-
-            error = ConnectToDebugserver (connect_url);
+            error = LaunchAndConnectToDebugserver (launch_info);
         }
         
         if (error.Success())
@@ -848,7 +807,7 @@ ProcessGDBRemote::DoLaunch (Module *exe_module, const ProcessLaunchInfo &launch_
                 return error;
             }
 
-            if (m_gdb_comm.SendPacketAndWaitForResponse("?", 1, m_last_stop_packet, false))
+            if (m_gdb_comm.SendPacketAndWaitForResponse("?", 1, m_last_stop_packet, false) == GDBRemoteCommunication::PacketResult::Success)
             {
                 if (!m_target.GetArchitecture().IsValid()) { // Make sure we have an architecture
                    m_target.SetArchitecture(m_gdb_comm.GetProcessArchitecture());
@@ -886,31 +845,35 @@ Error
 ProcessGDBRemote::ConnectToDebugserver (const char *connect_url)
 {
     Error error;
-    // Sleep and wait a bit for debugserver to start to listen...
-    std::unique_ptr<ConnectionFileDescriptor> conn_ap(new ConnectionFileDescriptor());
-    if (conn_ap.get())
+    // Only connect if we have a valid connect URL
+    
+    if (connect_url && connect_url[0])
     {
-        const uint32_t max_retry_count = 50;
-        uint32_t retry_count = 0;
-        while (!m_gdb_comm.IsConnected())
+        std::unique_ptr<ConnectionFileDescriptor> conn_ap(new ConnectionFileDescriptor());
+        if (conn_ap.get())
         {
-            if (conn_ap->Connect(connect_url, &error) == eConnectionStatusSuccess)
+            const uint32_t max_retry_count = 50;
+            uint32_t retry_count = 0;
+            while (!m_gdb_comm.IsConnected())
             {
-                m_gdb_comm.SetConnection (conn_ap.release());
-                break;
-            }
-            else if (error.WasInterrupted())
-            {
-                // If we were interrupted, don't keep retrying.
-                break;
-            }
-            
-            retry_count++;
-            
-            if (retry_count >= max_retry_count)
-                break;
+                if (conn_ap->Connect(connect_url, &error) == eConnectionStatusSuccess)
+                {
+                    m_gdb_comm.SetConnection (conn_ap.release());
+                    break;
+                }
+                else if (error.WasInterrupted())
+                {
+                    // If we were interrupted, don't keep retrying.
+                    break;
+                }
+                
+                retry_count++;
+                
+                if (retry_count >= max_retry_count)
+                    break;
 
-            usleep (100000);
+                usleep (100000);
+            }
         }
     }
 
@@ -1040,12 +1003,7 @@ ProcessGDBRemote::DoAttachToProcessWithID (lldb::pid_t attach_pid, const Process
         // Make sure we aren't already connected?
         if (!m_gdb_comm.IsConnected())
         {
-            char host_port[128];
-            snprintf (host_port, sizeof(host_port), "localhost:%u", get_random_port ());
-            char connect_url[128];
-            snprintf (connect_url, sizeof(connect_url), "connect://%s", host_port);
-
-            error = StartDebugserverProcess (host_port, attach_info);
+            error = LaunchAndConnectToDebugserver (attach_info);
             
             if (error.Fail())
             {
@@ -1054,10 +1012,6 @@ ProcessGDBRemote::DoAttachToProcessWithID (lldb::pid_t attach_pid, const Process
                     error_string = "unable to launch " DEBUGSERVER_BASENAME;
 
                 SetExitStatus (-1, error_string);
-            }
-            else
-            {
-                error = ConnectToDebugserver (connect_url);
             }
         }
     
@@ -1105,12 +1059,8 @@ ProcessGDBRemote::DoAttachToProcessWithName (const char *process_name, bool wait
         // Make sure we aren't already connected?
         if (!m_gdb_comm.IsConnected())
         {
-            char host_port[128];
-            snprintf (host_port, sizeof(host_port), "localhost:%u", get_random_port ());
-            char connect_url[128];
-            snprintf (connect_url, sizeof(connect_url), "connect://%s", host_port);
+            error = LaunchAndConnectToDebugserver (attach_info);
 
-            error = StartDebugserverProcess (host_port, attach_info);
             if (error.Fail())
             {
                 const char *error_string = error.AsCString();
@@ -1118,10 +1068,6 @@ ProcessGDBRemote::DoAttachToProcessWithName (const char *process_name, bool wait
                     error_string = "unable to launch " DEBUGSERVER_BASENAME;
 
                 SetExitStatus (-1, error_string);
-            }
-            else
-            {
-                error = ConnectToDebugserver (connect_url);
             }
         }
 
@@ -2026,7 +1972,7 @@ ProcessGDBRemote::DoDestroy ()
             bool send_async = true;
             const uint32_t old_packet_timeout = m_gdb_comm.SetPacketTimeout (3);
 
-            if (m_gdb_comm.SendPacketAndWaitForResponse("k", 1, response, send_async))
+            if (m_gdb_comm.SendPacketAndWaitForResponse("k", 1, response, send_async) == GDBRemoteCommunication::PacketResult::Success)
             {
                 char packet_cmd = response.GetChar(0);
 
@@ -2128,7 +2074,7 @@ ProcessGDBRemote::DoReadMemory (addr_t addr, void *buf, size_t size, Error &erro
     const int packet_len = ::snprintf (packet, sizeof(packet), "m%" PRIx64 ",%" PRIx64, (uint64_t)addr, (uint64_t)size);
     assert (packet_len + 1 < (int)sizeof(packet));
     StringExtractorGDBRemote response;
-    if (m_gdb_comm.SendPacketAndWaitForResponse(packet, packet_len, response, true))
+    if (m_gdb_comm.SendPacketAndWaitForResponse(packet, packet_len, response, true) == GDBRemoteCommunication::PacketResult::Success)
     {
         if (response.IsNormalResponse())
         {
@@ -2164,7 +2110,7 @@ ProcessGDBRemote::DoWriteMemory (addr_t addr, const void *buf, size_t size, Erro
     packet.Printf("M%" PRIx64 ",%" PRIx64 ":", addr, (uint64_t)size);
     packet.PutBytesAsRawHex8(buf, size, lldb::endian::InlHostByteOrder(), lldb::endian::InlHostByteOrder());
     StringExtractorGDBRemote response;
-    if (m_gdb_comm.SendPacketAndWaitForResponse(packet.GetData(), packet.GetSize(), response, true))
+    if (m_gdb_comm.SendPacketAndWaitForResponse(packet.GetData(), packet.GetSize(), response, true) == GDBRemoteCommunication::PacketResult::Success)
     {
         if (response.IsOKResponse())
         {
@@ -2546,157 +2492,52 @@ ProcessGDBRemote::DoSignal (int signo)
 }
 
 Error
-ProcessGDBRemote::StartDebugserverProcess (const char *debugserver_url)
-{
-    ProcessLaunchInfo launch_info;
-    return StartDebugserverProcess(debugserver_url, launch_info);
-}
-
-Error
-ProcessGDBRemote::StartDebugserverProcess (const char *debugserver_url, const ProcessInfo &process_info)    // The connection string to use in the spawned debugserver ("localhost:1234" or "/dev/tty...")
+ProcessGDBRemote::LaunchAndConnectToDebugserver (const ProcessInfo &process_info)
 {
     Error error;
+    uint16_t port = 0;
     if (m_debugserver_pid == LLDB_INVALID_PROCESS_ID)
     {
         // If we locate debugserver, keep that located version around
         static FileSpec g_debugserver_file_spec;
 
         ProcessLaunchInfo debugserver_launch_info;
-        char debugserver_path[PATH_MAX];
-        FileSpec &debugserver_file_spec = debugserver_launch_info.GetExecutableFile();
+        debugserver_launch_info.SetMonitorProcessCallback (MonitorDebugserverProcess, this, false);
+        debugserver_launch_info.SetUserID(process_info.GetUserID());
 
-        // Always check to see if we have an environment override for the path
-        // to the debugserver to use and use it if we do.
-        const char *env_debugserver_path = getenv("LLDB_DEBUGSERVER_PATH");
-        if (env_debugserver_path)
-            debugserver_file_spec.SetFile (env_debugserver_path, false);
+        error = m_gdb_comm.StartDebugserverProcess (NULL,
+                                                    debugserver_launch_info,
+                                                    port);
+
+        if (error.Success ())
+            m_debugserver_pid = debugserver_launch_info.GetProcessID();
         else
-            debugserver_file_spec = g_debugserver_file_spec;
-        bool debugserver_exists = debugserver_file_spec.Exists();
-        if (!debugserver_exists)
-        {
-            // The debugserver binary is in the LLDB.framework/Resources
-            // directory. 
-            if (Host::GetLLDBPath (ePathTypeSupportExecutableDir, debugserver_file_spec))
-            {
-                debugserver_file_spec.GetFilename().SetCString(DEBUGSERVER_BASENAME);
-                debugserver_exists = debugserver_file_spec.Exists();
-                if (debugserver_exists)
-                {
-                    g_debugserver_file_spec = debugserver_file_spec;
-                }
-                else
-                {
-                    g_debugserver_file_spec.Clear();
-                    debugserver_file_spec.Clear();
-                }
-            }
-        }
-
-        if (debugserver_exists)
-        {
-            debugserver_file_spec.GetPath (debugserver_path, sizeof(debugserver_path));
-
-            m_stdio_communication.Clear();
-
-            Log *log (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_PROCESS));
-
-            Args &debugserver_args = debugserver_launch_info.GetArguments();
-            char arg_cstr[PATH_MAX];
-
-            // Start args with "debugserver /file/path -r --"
-            debugserver_args.AppendArgument(debugserver_path);
-            debugserver_args.AppendArgument(debugserver_url);
-            // use native registers, not the GDB registers
-            debugserver_args.AppendArgument("--native-regs");   
-            // make debugserver run in its own session so signals generated by 
-            // special terminal key sequences (^C) don't affect debugserver
-            debugserver_args.AppendArgument("--setsid");
-
-            const char *env_debugserver_log_file = getenv("LLDB_DEBUGSERVER_LOG_FILE");
-            if (env_debugserver_log_file)
-            {
-                ::snprintf (arg_cstr, sizeof(arg_cstr), "--log-file=%s", env_debugserver_log_file);
-                debugserver_args.AppendArgument(arg_cstr);
-            }
-
-            const char *env_debugserver_log_flags = getenv("LLDB_DEBUGSERVER_LOG_FLAGS");
-            if (env_debugserver_log_flags)
-            {
-                ::snprintf (arg_cstr, sizeof(arg_cstr), "--log-flags=%s", env_debugserver_log_flags);
-                debugserver_args.AppendArgument(arg_cstr);
-            }
-//            debugserver_args.AppendArgument("--log-file=/tmp/debugserver.txt");
-//            debugserver_args.AppendArgument("--log-flags=0x802e0e");
-
-            // We currently send down all arguments, attach pids, or attach 
-            // process names in dedicated GDB server packets, so we don't need
-            // to pass them as arguments. This is currently because of all the
-            // things we need to setup prior to launching: the environment,
-            // current working dir, file actions, etc.
-#if 0
-            // Now append the program arguments
-            if (inferior_argv)
-            {
-                // Terminate the debugserver args so we can now append the inferior args
-                debugserver_args.AppendArgument("--");
-
-                for (int i = 0; inferior_argv[i] != NULL; ++i)
-                    debugserver_args.AppendArgument (inferior_argv[i]);
-            }
-            else if (attach_pid != LLDB_INVALID_PROCESS_ID)
-            {
-                ::snprintf (arg_cstr, sizeof(arg_cstr), "--attach=%u", attach_pid);
-                debugserver_args.AppendArgument (arg_cstr);
-            }
-            else if (attach_name && attach_name[0])
-            {
-                if (wait_for_launch)
-                    debugserver_args.AppendArgument ("--waitfor");
-                else
-                    debugserver_args.AppendArgument ("--attach");
-                debugserver_args.AppendArgument (attach_name);
-            }
-#endif
-            
-            ProcessLaunchInfo::FileAction file_action;
-            
-            // Close STDIN, STDOUT and STDERR. We might need to redirect them
-            // to "/dev/null" if we run into any problems.
-            file_action.Close (STDIN_FILENO);
-            debugserver_launch_info.AppendFileAction (file_action);
-            file_action.Close (STDOUT_FILENO);
-            debugserver_launch_info.AppendFileAction (file_action);
-            file_action.Close (STDERR_FILENO);
-            debugserver_launch_info.AppendFileAction (file_action);
-
-            if (log)
-            {
-                StreamString strm;
-                debugserver_args.Dump (&strm);
-                log->Printf("%s arguments:\n%s", debugserver_args.GetArgumentAtIndex(0), strm.GetData());
-            }
-
-            debugserver_launch_info.SetMonitorProcessCallback (MonitorDebugserverProcess, this, false);
-            debugserver_launch_info.SetUserID(process_info.GetUserID());
-
-            error = Host::LaunchProcess(debugserver_launch_info);
-
-            if (error.Success ())
-                m_debugserver_pid = debugserver_launch_info.GetProcessID();
-            else
-                m_debugserver_pid = LLDB_INVALID_PROCESS_ID;
-
-            if (error.Fail() || log)
-                error.PutToLog(log, "Host::LaunchProcess (launch_info) => pid=%" PRIu64 ", path='%s'", m_debugserver_pid, debugserver_path);
-        }
-        else
-        {
-            error.SetErrorStringWithFormat ("unable to locate " DEBUGSERVER_BASENAME);
-        }
+            m_debugserver_pid = LLDB_INVALID_PROCESS_ID;
 
         if (m_debugserver_pid != LLDB_INVALID_PROCESS_ID)
             StartAsyncThread ();
+        
+        if (error.Fail())
+        {
+            Log *log (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_PROCESS));
+
+            if (log)
+                log->Printf("failed to start debugserver process: %s", error.AsCString());
+            return error;
+        }
+        
+        if (m_gdb_comm.IsConnected())
+        {
+            // Finish the connection process by doing the handshake without connecting (send NULL URL)
+            ConnectToDebugserver (NULL);
+        }
+        else
+        {
+            char connect_url[128];
+            snprintf (connect_url, sizeof(connect_url), "connect://localhost:%u", port);
+            error = ConnectToDebugserver (connect_url);
+        }
+
     }
     return error;
 }

@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <sys/types.h>
+#include <unistd.h>
 #ifdef _WIN32
 #include "lldb/Host/windows/windows.h"
 #include <winsock2.h>
@@ -457,7 +458,7 @@ lldb::tid_t
 Host::GetCurrentThreadID()
 {
 #if defined (__APPLE__)
-    // Calling "mach_port_deallocate()" bumps the reference count on the thread
+    // Calling "mach_thread_self()" bumps the reference count on the thread
     // port, so we need to deallocate it. mach_task_self() doesn't bump the ref
     // count.
     thread_port_t thread_self = mach_thread_self();
@@ -489,10 +490,14 @@ Host::GetSignalAsCString (int signo)
     case SIGILL:    return "SIGILL";    // 4    illegal instruction (not reset when caught)
     case SIGTRAP:   return "SIGTRAP";   // 5    trace trap (not reset when caught)
     case SIGABRT:   return "SIGABRT";   // 6    abort()
-#if  (defined(_POSIX_C_SOURCE) && !defined(_DARWIN_C_SOURCE))
+#if  defined(SIGPOLL)
+#if !defined(SIGIO) || (SIGPOLL != SIGIO)
+// Under some GNU/Linux, SIGPOLL and SIGIO are the same. Causing the build to
+// fail with 'multiple define cases with same value'
     case SIGPOLL:   return "SIGPOLL";   // 7    pollable event ([XSR] generated, not supported)
 #endif
-#if  !defined(_POSIX_C_SOURCE)
+#endif
+#if  defined(SIGEMT)
     case SIGEMT:    return "SIGEMT";    // 7    EMT instruction
 #endif
     case SIGFPE:    return "SIGFPE";    // 8    floating point exception
@@ -510,15 +515,17 @@ Host::GetSignalAsCString (int signo)
     case SIGCHLD:   return "SIGCHLD";   // 20    to parent on child stop or exit
     case SIGTTIN:   return "SIGTTIN";   // 21    to readers pgrp upon background tty read
     case SIGTTOU:   return "SIGTTOU";   // 22    like TTIN for output if (tp->t_local&LTOSTOP)
-#if  !defined(_POSIX_C_SOURCE)
+#if  defined(SIGIO)
     case SIGIO:     return "SIGIO";     // 23    input/output possible signal
 #endif
     case SIGXCPU:   return "SIGXCPU";   // 24    exceeded CPU time limit
     case SIGXFSZ:   return "SIGXFSZ";   // 25    exceeded file size limit
     case SIGVTALRM: return "SIGVTALRM"; // 26    virtual time alarm
     case SIGPROF:   return "SIGPROF";   // 27    profiling time alarm
-#if  !defined(_POSIX_C_SOURCE)
+#if  defined(SIGWINCH)
     case SIGWINCH:  return "SIGWINCH";  // 28    window size changes
+#endif
+#if  defined(SIGINFO)
     case SIGINFO:   return "SIGINFO";   // 29    information request
 #endif
     case SIGUSR1:   return "SIGUSR1";   // 30    user defined signal 1
@@ -1224,6 +1231,29 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
             // TODO: where would user LLDB plug-ins be located on other systems?
             return false;
         }
+            
+    case ePathTypeLLDBTempSystemDir:
+        {
+            static ConstString g_lldb_tmp_dir;
+            if (!g_lldb_tmp_dir)
+            {
+                const char *tmpdir_cstr = getenv("TMPDIR");
+                if (tmpdir_cstr == NULL)
+                {
+                    tmpdir_cstr = getenv("TMP");
+                    if (tmpdir_cstr == NULL)
+                        tmpdir_cstr = getenv("TEMP");
+                }
+                if (tmpdir_cstr)
+                {
+                    g_lldb_tmp_dir.SetCString(tmpdir_cstr);
+                    if (log)
+                        log->Printf("Host::GetLLDBPath(ePathTypeLLDBTempSystemDir) => '%s'", g_lldb_tmp_dir.GetCString());
+                }
+            }
+            file_spec.GetDirectory() = g_lldb_tmp_dir;
+            return (bool)file_spec.GetDirectory();
+        }
     }
 
     return false;
@@ -1473,21 +1503,36 @@ Host::RunShellCommand (const char *command,
     
     if (working_dir)
         launch_info.SetWorkingDirectory(working_dir);
-    char output_file_path_buffer[L_tmpnam];
+    char output_file_path_buffer[PATH_MAX];
     const char *output_file_path = NULL;
+    
     if (command_output_ptr)
     {
         // Create a temporary file to get the stdout/stderr and redirect the
         // output of the command into this file. We will later read this file
         // if all goes well and fill the data into "command_output_ptr"
-        output_file_path = ::tmpnam(output_file_path_buffer);
-        launch_info.AppendSuppressFileAction (STDIN_FILENO, true, false);
+        FileSpec tmpdir_file_spec;
+        if (Host::GetLLDBPath (ePathTypeLLDBTempSystemDir, tmpdir_file_spec))
+        {
+            tmpdir_file_spec.GetFilename().SetCString("lldb-shell-output.XXXXXX");
+            strncpy(output_file_path_buffer, tmpdir_file_spec.GetPath().c_str(), sizeof(output_file_path_buffer));
+        }
+        else
+        {
+            strncpy(output_file_path_buffer, "/tmp/lldb-shell-output.XXXXXX", sizeof(output_file_path_buffer));
+        }
+        
+        output_file_path = ::mktemp(output_file_path_buffer);
+    }
+    
+    launch_info.AppendSuppressFileAction (STDIN_FILENO, true, false);
+    if (output_file_path)
+    {
         launch_info.AppendOpenFileAction(STDOUT_FILENO, output_file_path, false, true);
         launch_info.AppendDuplicateFileAction(STDOUT_FILENO, STDERR_FILENO);
     }
     else
     {
-        launch_info.AppendSuppressFileAction (STDIN_FILENO, true, false);
         launch_info.AppendSuppressFileAction (STDOUT_FILENO, false, true);
         launch_info.AppendSuppressFileAction (STDERR_FILENO, false, true);
     }
@@ -1569,7 +1614,7 @@ Host::RunShellCommand (const char *command,
     return error;
 }
 
-#if defined(__linux__) or defined(__FreeBSD__)
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__GLIBC__)
 // The functions below implement process launching via posix_spawn() for Linux
 // and FreeBSD.
 
@@ -1858,7 +1903,7 @@ Error
 Host::MakeDirectory (const char* path, uint32_t mode)
 {
     Error error;
-    error.SetErrorString("%s in not implemented on this host", __PRETTY_FUNCTION__);
+    error.SetErrorStringWithFormat("%s in not implemented on this host", __PRETTY_FUNCTION__);
     return error;
 }
 
@@ -1866,7 +1911,7 @@ Error
 Host::GetFilePermissions (const char* path, uint32_t &file_permissions)
 {
     Error error;
-    error.SetErrorString("%s is not supported on this host", __PRETTY_FUNCTION__);
+    error.SetErrorStringWithFormat("%s is not supported on this host", __PRETTY_FUNCTION__);
     return error;
 }
 
@@ -1874,7 +1919,7 @@ Error
 Host::SetFilePermissions (const char* path, uint32_t file_permissions)
 {
     Error error;
-    error.SetErrorString("%s is not supported on this host", __PRETTY_FUNCTION__);
+    error.SetErrorStringWithFormat("%s is not supported on this host", __PRETTY_FUNCTION__);
     return error;
 }
 
@@ -1882,7 +1927,7 @@ Error
 Host::Symlink (const char *src, const char *dst)
 {
     Error error;
-    error.SetErrorString("%s is not supported on this host", __PRETTY_FUNCTION__);
+    error.SetErrorStringWithFormat("%s is not supported on this host", __PRETTY_FUNCTION__);
     return error;
 }
 
@@ -1890,7 +1935,7 @@ Error
 Host::Readlink (const char *path, char *buf, size_t buf_len)
 {
     Error error;
-    error.SetErrorString("%s is not supported on this host", __PRETTY_FUNCTION__);
+    error.SetErrorStringWithFormat("%s is not supported on this host", __PRETTY_FUNCTION__);
     return error;
 }
 
@@ -1898,7 +1943,7 @@ Error
 Host::Unlink (const char *path)
 {
     Error error;
-    error.SetErrorString("%s is not supported on this host", __PRETTY_FUNCTION__);
+    error.SetErrorStringWithFormat("%s is not supported on this host", __PRETTY_FUNCTION__);
     return error;
 }
 

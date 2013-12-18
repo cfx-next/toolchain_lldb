@@ -7,7 +7,7 @@ from lldbtest import *
 
 class CrashingRecursiveInferiorTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "inferior-crashing", "recursive-inferior")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     def test_recursive_inferior_crashing_dsym(self):
@@ -133,7 +133,7 @@ class CrashingRecursiveInferiorTestCase(TestBase):
 
         # Now launch the process, and do not stop at entry point.
         # Both argv and envp are null.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         if process.GetState() != lldb.eStateStopped:
             self.fail("Process should be in the 'stopped' state, "

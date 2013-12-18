@@ -11,7 +11,7 @@ from lldbtest import *
 
 class FrameAPITestCase(TestBase):
 
-    mydir = os.path.join("python_api", "frame")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -56,7 +56,7 @@ class FrameAPITestCase(TestBase):
                         VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         process = target.GetProcess()
         self.assertTrue(process.GetState() == lldb.eStateStopped,
@@ -142,7 +142,7 @@ class FrameAPITestCase(TestBase):
                         VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         process = target.GetProcess()
         self.assertTrue(process.GetState() == lldb.eStateStopped,
@@ -179,7 +179,7 @@ class FrameAPITestCase(TestBase):
                         VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         process = target.GetProcess()
         self.assertTrue(process.GetState() == lldb.eStateStopped,

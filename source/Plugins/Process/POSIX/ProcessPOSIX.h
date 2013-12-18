@@ -58,7 +58,7 @@ public:
 
     virtual lldb_private::Error
     DoLaunch (lldb_private::Module *exe_module, 
-              const lldb_private::ProcessLaunchInfo &launch_info);
+              lldb_private::ProcessLaunchInfo &launch_info);
 
     virtual void
     DidLaunch();
@@ -148,7 +148,8 @@ public:
     // ProcessPOSIX internal API.
 
     /// Registers the given message with this process.
-    void SendMessage(const ProcessMessage &message);
+    virtual void
+    SendMessage(const ProcessMessage &message);
 
     ProcessMonitor &
     GetMonitor() { assert(m_monitor); return *m_monitor; }

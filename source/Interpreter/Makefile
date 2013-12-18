@@ -23,7 +23,7 @@ EXTRA_OPTIONS += -Wno-four-char-constants
 
 # Drop -Wself-assign, -Wmissing-field-initializers and -Wsometimes-uninitialized,
 # which we are not currently clean with (due to SWIG generated cpp source).
-EXTRA_OPTIONS += -Wno-missing-field-initializers -Wno-self-assign -Wno-sometimes-uninitialized
+EXTRA_OPTIONS += -Wno-missing-field-initializers -Wno-self-assign -Wno-sometimes-uninitialized -Wno-cast-qual
 
 PYTHON_DIR := $(PROJ_OBJ_ROOT)/$(BuildMode)
 
@@ -35,7 +35,7 @@ LLDBWrapPython.cpp lldb.py: $(PROJ_SRC_DIR)/$(LLDB_LEVEL)/scripts/Python/modify-
 
 install-local:: lldb.py
 	$(Echo) Installing $(BuildMode) LLDB python modules
-	$(Verb) "$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/scripts/finish-swig-wrapper-classes.sh" "$(PROJ_SRC_DIR)/$(LLDB_LEVEL)" "$(PROJ_OBJ_DIR)" "$(PROJ_OBJ_DIR)" "" -m
+	$(Verb) "$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/scripts/finish-swig-wrapper-classes.sh" "$(PROJ_SRC_DIR)/$(LLDB_LEVEL)" "$(PROJ_OBJ_DIR)" "$(PROJ_OBJ_DIR)" "$(DESTDIR)$(prefix)" -m
 
 clean-local::
 	$(Verb) $(RM) -f LLDBWrapPython.cpp lldb.py

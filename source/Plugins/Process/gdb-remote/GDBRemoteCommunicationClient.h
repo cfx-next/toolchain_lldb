@@ -47,12 +47,12 @@ public:
     bool
     HandshakeWithServer (lldb_private::Error *error_ptr);
 
-    size_t
+    PacketResult
     SendPacketAndWaitForResponse (const char *send_payload,
                                   StringExtractorGDBRemote &response,
                                   bool send_async);
 
-    size_t
+    PacketResult
     SendPacketAndWaitForResponse (const char *send_payload,
                                   size_t send_length,
                                   StringExtractorGDBRemote &response,
@@ -94,7 +94,7 @@ public:
     GetLaunchSuccess (std::string &error_str);
 
     uint16_t
-    LaunchGDBserverAndGetPort (lldb::pid_t &pid);
+    LaunchGDBserverAndGetPort (lldb::pid_t &pid, const char *remote_accept_hostname);
     
     bool
     KillSpawnedProcess (lldb::pid_t pid);
@@ -458,6 +458,11 @@ public:
     
 protected:
 
+    PacketResult
+    SendPacketAndWaitForResponseNoLock (const char *payload,
+                                        size_t payload_length,
+                                        StringExtractorGDBRemote &response);
+
     bool
     GetCurrentProcessInfo ();
 
@@ -511,6 +516,7 @@ protected:
     lldb_private::Mutex m_async_mutex;
     lldb_private::Predicate<bool> m_async_packet_predicate;
     std::string m_async_packet;
+    PacketResult m_async_result;
     StringExtractorGDBRemote m_async_response;
     int m_async_signal; // We were asked to deliver a signal to the inferior process.
     bool m_interrupt_sent;

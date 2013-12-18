@@ -10,7 +10,7 @@ from lldbtest import *
 
 class WatchpointIgnoreCountTestCase(TestBase):
 
-    mydir = os.path.join("python_api", "watchpoint")
+    mydir = TestBase.compute_mydir(__file__)
 
     def setUp(self):
         # Call super's setUp().
@@ -51,7 +51,7 @@ class WatchpointIgnoreCountTestCase(TestBase):
                         VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         # We should be stopped due to the breakpoint.  Get frame #0.
         process = target.GetProcess()

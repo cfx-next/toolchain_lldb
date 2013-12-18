@@ -199,13 +199,19 @@ PlatformRemoteGDBServer::GetRemoteWorkingDirectory()
 {
     if (IsConnected())
     {
-        if (!m_working_dir)
+        Log *log = GetLogIfAnyCategoriesSet(LIBLLDB_LOG_PLATFORM);
+        std::string cwd;
+        if (m_gdb_client.GetWorkingDir(cwd))
         {
-            std::string cwd;
-            if (m_gdb_client.GetWorkingDir(cwd))
-                m_working_dir = ConstString(cwd.c_str());
+            ConstString working_dir(cwd.c_str());
+            if (log)
+                log->Printf("PlatformRemoteGDBServer::GetRemoteWorkingDirectory() -> '%s'", working_dir.GetCString());
+            return working_dir;
         }
-        return m_working_dir;
+        else
+        {
+            return ConstString();
+        }
     }
     else
     {
@@ -220,7 +226,9 @@ PlatformRemoteGDBServer::SetRemoteWorkingDirectory(const lldb_private::ConstStri
     {
         // Clear the working directory it case it doesn't get set correctly. This will
         // for use to re-read it
-        m_working_dir.Clear();
+        Log *log = GetLogIfAnyCategoriesSet(LIBLLDB_LOG_PLATFORM);
+        if (log)
+            log->Printf("PlatformRemoteGDBServer::SetRemoteWorkingDirectory('%s')", path.GetCString());
         return m_gdb_client.SetWorkingDir(path.GetCString()) == 0;
     }
     else
@@ -410,7 +418,21 @@ PlatformRemoteGDBServer::DebugProcess (lldb_private::ProcessLaunchInfo &launch_i
         if (IsConnected())
         {
             lldb::pid_t debugserver_pid = LLDB_INVALID_PROCESS_ID;
-            uint16_t port = m_gdb_client.LaunchGDBserverAndGetPort(debugserver_pid);
+            ArchSpec remote_arch = GetRemoteSystemArchitecture();
+            llvm::Triple &remote_triple = remote_arch.GetTriple();
+            uint16_t port = 0;
+            if (remote_triple.getVendor() == llvm::Triple::Apple && remote_triple.getOS() == llvm::Triple::IOS)
+            {
+                // When remote debugging to iOS, we use a USB mux that always talks
+                // to localhost, so we will need the remote debugserver to accept connections
+                // only from localhost, no matter what our current hostname is
+                port = m_gdb_client.LaunchGDBserverAndGetPort(debugserver_pid, "localhost");
+            }
+            else
+            {
+                // All other hosts should use their actual hostname
+                port = m_gdb_client.LaunchGDBserverAndGetPort(debugserver_pid, NULL);
+            }
             
             if (port == 0)
             {
@@ -484,7 +506,21 @@ PlatformRemoteGDBServer::Attach (lldb_private::ProcessAttachInfo &attach_info,
         if (IsConnected())
         {
             lldb::pid_t debugserver_pid = LLDB_INVALID_PROCESS_ID;
-            uint16_t port = m_gdb_client.LaunchGDBserverAndGetPort(debugserver_pid);
+            ArchSpec remote_arch = GetRemoteSystemArchitecture();
+            llvm::Triple &remote_triple = remote_arch.GetTriple();
+            uint16_t port = 0;
+            if (remote_triple.getVendor() == llvm::Triple::Apple && remote_triple.getOS() == llvm::Triple::IOS)
+            {
+                // When remote debugging to iOS, we use a USB mux that always talks
+                // to localhost, so we will need the remote debugserver to accept connections
+                // only from localhost, no matter what our current hostname is
+                port = m_gdb_client.LaunchGDBserverAndGetPort(debugserver_pid, "localhost");
+            }
+            else
+            {
+                // All other hosts should use their actual hostname
+                port = m_gdb_client.LaunchGDBserverAndGetPort(debugserver_pid, NULL);
+            }
             
             if (port == 0)
             {

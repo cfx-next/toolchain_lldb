@@ -181,6 +181,8 @@ class   SearchFilter;
 class   Section;
 class   SectionImpl;
 class   SectionList;
+class   SectionLoadHistory;
+class   SectionLoadList;
 class   Settings;
 class   SourceManager;
 class   SourceManagerImpl;
@@ -214,6 +216,9 @@ class   TypeFilterImpl;
 #ifndef LLDB_DISABLE_PYTHON
 class   ScriptedSyntheticChildren;
 #endif
+class   Queue;
+class   QueueItem;
+class   QueueImpl;
 class   Target;
 class   TargetList;
 class   Thread;
@@ -334,12 +339,16 @@ namespace lldb {
     typedef std::shared_ptr<lldb_private::RegisterCheckpoint> RegisterCheckpointSP;
     typedef std::shared_ptr<lldb_private::RegisterContext> RegisterContextSP;
     typedef std::shared_ptr<lldb_private::RegularExpression> RegularExpressionSP;
+    typedef std::shared_ptr<lldb_private::Queue> QueueSP;
+    typedef std::weak_ptr<lldb_private::Queue> QueueWP;
+    typedef std::shared_ptr<lldb_private::QueueItem> QueueItemSP;
     typedef std::shared_ptr<lldb_private::ScriptInterpreterObject> ScriptInterpreterObjectSP;
 #ifndef LLDB_DISABLE_PYTHON
     typedef std::shared_ptr<lldb_private::ScriptSummaryFormat> ScriptSummaryFormatSP;
 #endif // #ifndef LLDB_DISABLE_PYTHON
     typedef std::shared_ptr<lldb_private::Section> SectionSP;
     typedef std::weak_ptr<lldb_private::Section> SectionWP;
+    typedef std::shared_ptr<lldb_private::SectionLoadList> SectionLoadListSP;
     typedef std::shared_ptr<lldb_private::SearchFilter> SearchFilterSP;
     typedef std::shared_ptr<lldb_private::Settings> SettingsSP;
     typedef std::shared_ptr<lldb_private::StackFrame> StackFrameSP;

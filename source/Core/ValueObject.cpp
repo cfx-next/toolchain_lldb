@@ -50,6 +50,7 @@
 #include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
+#include "lldb/Target/SectionLoadList.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
 
@@ -3515,7 +3516,8 @@ ValueObject::CreateConstantValue (const ConstString &name)
     
     if (!valobj_sp)
     {
-        valobj_sp = ValueObjectConstResult::Create (NULL, m_error);
+        ExecutionContext exe_ctx (GetExecutionContextRef());
+        valobj_sp = ValueObjectConstResult::Create (exe_ctx.GetBestExecutionContextScope(), m_error);
     }
     return valobj_sp;
 }

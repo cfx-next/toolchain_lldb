@@ -83,6 +83,7 @@ POSIXThread::GetMonitor()
     return process.GetMonitor();
 }
 
+// Overridden by FreeBSDThread; this is used only on Linux.
 void
 POSIXThread::RefreshStateAfterStop()
 {
@@ -257,6 +258,7 @@ POSIXThread::GetUnwinder()
     return m_unwinder_ap.get();
 }
 
+// Overridden by FreeBSDThread; this is used only on Linux.
 void
 POSIXThread::WillResume(lldb::StateType resume_state)
 {
