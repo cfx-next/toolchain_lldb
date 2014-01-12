@@ -1680,7 +1680,6 @@
 		94CB256016B069800059775D /* DataVisualization.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DataVisualization.h; path = include/lldb/DataFormatters/DataVisualization.h; sourceTree = "<group>"; };
 		94CB256116B069800059775D /* FormatClasses.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FormatClasses.h; path = include/lldb/DataFormatters/FormatClasses.h; sourceTree = "<group>"; };
 		94CB256216B069800059775D /* FormatManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FormatManager.h; path = include/lldb/DataFormatters/FormatManager.h; sourceTree = "<group>"; };
-		94CB256316B069800059775D /* FormatNavigator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FormatNavigator.h; path = include/lldb/DataFormatters/FormatNavigator.h; sourceTree = "<group>"; };
 		94CB256416B096F10059775D /* TypeCategory.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = TypeCategory.cpp; path = source/DataFormatters/TypeCategory.cpp; sourceTree = "<group>"; };
 		94CB256516B096F10059775D /* TypeCategoryMap.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = TypeCategoryMap.cpp; path = source/DataFormatters/TypeCategoryMap.cpp; sourceTree = "<group>"; };
 		94CB256816B096F90059775D /* TypeCategory.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = TypeCategory.h; path = include/lldb/DataFormatters/TypeCategory.h; sourceTree = "<group>"; };
@@ -1708,6 +1707,7 @@
 		94EA1D5B15E6C9B400D4171A /* PythonDataObjects.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = PythonDataObjects.cpp; path = source/Interpreter/PythonDataObjects.cpp; sourceTree = "<group>"; };
 		94EA27CD17DE91750070F505 /* LibCxxUnorderedMap.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = LibCxxUnorderedMap.cpp; path = source/DataFormatters/LibCxxUnorderedMap.cpp; sourceTree = "<group>"; };
 		94EBAC8313D9EE26009BA64E /* PythonPointer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = PythonPointer.h; path = include/lldb/Utility/PythonPointer.h; sourceTree = "<group>"; };
+		94EE33F218643C6900CD703B /* FormattersContainer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FormattersContainer.h; path = include/lldb/DataFormatters/FormattersContainer.h; sourceTree = "<group>"; };
 		94FA3DDD1405D4E500833217 /* ValueObjectConstResultChild.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ValueObjectConstResultChild.h; path = include/lldb/Core/ValueObjectConstResultChild.h; sourceTree = "<group>"; };
 		94FA3DDF1405D50300833217 /* ValueObjectConstResultChild.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ValueObjectConstResultChild.cpp; path = source/Core/ValueObjectConstResultChild.cpp; sourceTree = "<group>"; };
 		94FE476613FC1DA8001F8475 /* finish-swig-Python-LLDB.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "finish-swig-Python-LLDB.sh"; sourceTree = "<group>"; };
@@ -3576,7 +3576,7 @@
 				94CB255916B069770059775D /* FormatClasses.cpp */,
 				94CB256216B069800059775D /* FormatManager.h */,
 				94CB255A16B069770059775D /* FormatManager.cpp */,
-				94CB256316B069800059775D /* FormatNavigator.h */,
+				94EE33F218643C6900CD703B /* FormattersContainer.h */,
 				94D0B10A16D5535900EA9C70 /* LibCxx.cpp */,
 				94CD704F16F8DF1C00CF1E42 /* LibCxxList.cpp */,
 				94CD705116F8F5BC00CF1E42 /* LibCxxMap.cpp */,
@@ -4841,9 +4841,9 @@
 				CLANG_LINK_OBJC_RUNTIME = NO;
 				CLANG_OBJC_RUNTIME = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
 				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 310.99.0;
+				DYLIB_CURRENT_VERSION = 320.99.0;
 				EXPORTED_SYMBOLS_FILE = "resources/lldb-framework-exports";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -4902,10 +4902,10 @@
 				CLANG_LINK_OBJC_RUNTIME = NO;
 				CLANG_OBJC_RUNTIME = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
 				DEAD_CODE_STRIPPING = YES;
 				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 310.99.0;
+				DYLIB_CURRENT_VERSION = 320.99.0;
 				EXPORTED_SYMBOLS_FILE = "resources/lldb-framework-exports";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -4962,7 +4962,7 @@
 				ARCHS = "$(ARCHS_STANDARD_64_BIT)";
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
 				DEBUGGING_SYMBOLS = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
@@ -4988,7 +4988,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
 				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				OTHER_CFLAGS = "";
@@ -5005,7 +5005,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
 				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				OTHER_CFLAGS = "";
@@ -5019,8 +5019,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 310.99.0;
-				DYLIB_CURRENT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
+				DYLIB_CURRENT_VERSION = 320.99.0;
 				EXECUTABLE_EXTENSION = a;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -5055,8 +5055,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 310.99.0;
-				DYLIB_CURRENT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
+				DYLIB_CURRENT_VERSION = 320.99.0;
 				EXECUTABLE_EXTENSION = a;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -5091,8 +5091,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 310.99.0;
-				DYLIB_CURRENT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
+				DYLIB_CURRENT_VERSION = 320.99.0;
 				EXECUTABLE_EXTENSION = a;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -5193,7 +5193,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks\"",
@@ -5235,10 +5235,10 @@
 				CLANG_OBJC_RUNTIME = NO;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
 				DEAD_CODE_STRIPPING = YES;
 				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 310.99.0;
+				DYLIB_CURRENT_VERSION = 320.99.0;
 				EXPORTED_SYMBOLS_FILE = "resources/lldb-framework-exports";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -5862,7 +5862,7 @@
 		26F5C26C10F3D9A5009D5894 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks\"",
@@ -5892,7 +5892,7 @@
 		26F5C26D10F3D9A5009D5894 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks\"",
@@ -6010,7 +6010,7 @@
 		49BB8F381611172B00BDD462 /* DebugClang */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks\"",
@@ -6044,9 +6044,9 @@
 				CLANG_LINK_OBJC_RUNTIME = NO;
 				CLANG_OBJC_RUNTIME = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
 				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 310.99.0;
+				DYLIB_CURRENT_VERSION = 320.99.0;
 				EXPORTED_SYMBOLS_FILE = "resources/lldb-framework-exports";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -6115,8 +6115,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 310.99.0;
-				DYLIB_CURRENT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
+				DYLIB_CURRENT_VERSION = 320.99.0;
 				EXECUTABLE_EXTENSION = a;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -6296,7 +6296,7 @@
 				ARCHS = "$(ARCHS_STANDARD_64_BIT)";
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 310.99.0;
+				CURRENT_PROJECT_VERSION = 320.99.0;
 				DEBUGGING_SYMBOLS = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_ENABLE_OBJC_EXCEPTIONS = YES;

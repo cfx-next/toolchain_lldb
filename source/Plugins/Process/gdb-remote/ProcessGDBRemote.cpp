@@ -167,6 +167,34 @@ namespace {
     
 } // anonymous namespace end
 
+static bool rand_initialized = false;
+
+// TODO Randomly assigning a port is unsafe.  We should get an unused
+// ephemeral port from the kernel and make sure we reserve it before passing
+// it to debugserver.
+
+#if defined (__APPLE__)
+#define LOW_PORT    (IPPORT_RESERVED)
+#define HIGH_PORT   (IPPORT_HIFIRSTAUTO)
+#else
+#define LOW_PORT    (1024u)
+#define HIGH_PORT   (49151u)
+#endif
+
+static inline uint16_t
+get_random_port ()
+{
+    if (!rand_initialized)
+    {
+        time_t seed = time(NULL);
+        
+        rand_initialized = true;
+        srand(seed);
+    }
+    return (rand() % (HIGH_PORT - LOW_PORT)) + LOW_PORT;
+}
+
+
 lldb_private::ConstString
 ProcessGDBRemote::GetPluginNameStatic()
 {
@@ -509,6 +537,10 @@ ProcessGDBRemote::BuildDynamicRegisterInfo (bool force)
 
                 m_register_info.AddRegister(reg_info, reg_name, alt_name, set_name);
             }
+            else
+            {
+                break;  // ensure exit before reg_num is incremented
+            }
         }
         else
         {
@@ -619,10 +651,17 @@ ProcessGDBRemote::DoConnectRemote (Stream *strm, const char *remote_url)
         GetThreadList();
         if (m_gdb_comm.SendPacketAndWaitForResponse("?", 1, m_last_stop_packet, false) == GDBRemoteCommunication::PacketResult::Success)
         {
-            if (!m_target.GetArchitecture().IsValid()) { // Make sure we have an architecture
-               m_target.SetArchitecture(m_gdb_comm.GetProcessArchitecture());
+            if (!m_target.GetArchitecture().IsValid()) 
+            {
+                if (m_gdb_comm.GetProcessArchitecture().IsValid())
+                {
+                    m_target.SetArchitecture(m_gdb_comm.GetProcessArchitecture());
+                }
+                else
+                {
+                    m_target.SetArchitecture(m_gdb_comm.GetHostArchitecture());
+                }
             }
-
 
             const StateType state = SetThreadStopInfo (m_last_stop_packet);
             if (state == eStateStopped)
@@ -809,8 +848,16 @@ ProcessGDBRemote::DoLaunch (Module *exe_module, ProcessLaunchInfo &launch_info)
 
             if (m_gdb_comm.SendPacketAndWaitForResponse("?", 1, m_last_stop_packet, false) == GDBRemoteCommunication::PacketResult::Success)
             {
-                if (!m_target.GetArchitecture().IsValid()) { // Make sure we have an architecture
-                   m_target.SetArchitecture(m_gdb_comm.GetProcessArchitecture());
+                if (!m_target.GetArchitecture().IsValid()) 
+                {
+                    if (m_gdb_comm.GetProcessArchitecture().IsValid())
+                    {
+                        m_target.SetArchitecture(m_gdb_comm.GetProcessArchitecture());
+                    }
+                    else
+                    {
+                        m_target.SetArchitecture(m_gdb_comm.GetHostArchitecture());
+                    }
                 }
 
                 SetPrivateState (SetThreadStopInfo (m_last_stop_packet));
@@ -1048,7 +1095,7 @@ ProcessGDBRemote::AttachInputReaderCallback
 }
 
 Error
-ProcessGDBRemote::DoAttachToProcessWithName (const char *process_name, bool wait_for_launch, const ProcessAttachInfo &attach_info)
+ProcessGDBRemote::DoAttachToProcessWithName (const char *process_name, const ProcessAttachInfo &attach_info)
 {
     Error error;
     // Clear out and clean up from any current state
@@ -1075,7 +1122,7 @@ ProcessGDBRemote::DoAttachToProcessWithName (const char *process_name, bool wait
         {
             StreamString packet;
             
-            if (wait_for_launch)
+            if (attach_info.GetWaitForLaunch())
             {
                 if (!m_gdb_comm.GetVAttachOrWaitSupported())
                 {
@@ -2495,7 +2542,6 @@ Error
 ProcessGDBRemote::LaunchAndConnectToDebugserver (const ProcessInfo &process_info)
 {
     Error error;
-    uint16_t port = 0;
     if (m_debugserver_pid == LLDB_INVALID_PROCESS_ID)
     {
         // If we locate debugserver, keep that located version around
@@ -2505,7 +2551,20 @@ ProcessGDBRemote::LaunchAndConnectToDebugserver (const ProcessInfo &process_info
         debugserver_launch_info.SetMonitorProcessCallback (MonitorDebugserverProcess, this, false);
         debugserver_launch_info.SetUserID(process_info.GetUserID());
 
-        error = m_gdb_comm.StartDebugserverProcess (NULL,
+#if defined (__APPLE__) && defined (__arm__)
+        // On iOS, still do a local connection using a random port
+        const char *hostname = "localhost";
+        uint16_t port = get_random_port ();
+#else
+        // Set hostname being NULL to do the reverse connect where debugserver
+        // will bind to port zero and it will communicate back to us the port
+        // that we will connect to
+        const char *hostname = NULL;
+        uint16_t port = 0;
+#endif
+
+        error = m_gdb_comm.StartDebugserverProcess (hostname,
+                                                    port,
                                                     debugserver_launch_info,
                                                     port);
 
@@ -2533,9 +2592,9 @@ ProcessGDBRemote::LaunchAndConnectToDebugserver (const ProcessInfo &process_info
         }
         else
         {
-            char connect_url[128];
-            snprintf (connect_url, sizeof(connect_url), "connect://localhost:%u", port);
-            error = ConnectToDebugserver (connect_url);
+            StreamString connect_url;
+            connect_url.Printf("connect://%s:%u", hostname, port);
+            error = ConnectToDebugserver (connect_url.GetString().c_str());
         }
 
     }

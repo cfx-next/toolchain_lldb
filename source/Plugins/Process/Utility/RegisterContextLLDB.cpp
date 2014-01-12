@@ -96,6 +96,7 @@ RegisterContextLLDB::InitializeZerothFrame()
     if (reg_ctx_sp.get() == NULL)
     {
         m_frame_type = eNotAValidFrame;
+        UnwindLogMsg ("frame does not have a register context");
         return;
     }
 
@@ -104,6 +105,7 @@ RegisterContextLLDB::InitializeZerothFrame()
     if (current_pc == LLDB_INVALID_ADDRESS)
     {
         m_frame_type = eNotAValidFrame;
+        UnwindLogMsg ("frame does not have a pc");
         return;
     }
 
@@ -118,7 +120,7 @@ RegisterContextLLDB::InitializeZerothFrame()
         current_pc = abi->FixCodeAddress(current_pc);
 
     // Initialize m_current_pc, an Address object, based on current_pc, an addr_t.
-    process->GetTarget().GetSectionLoadList().ResolveLoadAddress (current_pc, m_current_pc);
+    m_current_pc.SetLoadAddress (current_pc, &process->GetTarget());
 
     // If we don't have a Module for some reason, we're not going to find symbol/function information - just
     // stick in some reasonable defaults and hope we can unwind past this frame.
@@ -198,6 +200,7 @@ RegisterContextLLDB::InitializeZerothFrame()
 
     if (!active_row.get())
     {
+        UnwindLogMsg ("could not find an unwindplan row for this frame's pc");
         m_frame_type = eNotAValidFrame;
         return;
     }
@@ -206,6 +209,7 @@ RegisterContextLLDB::InitializeZerothFrame()
     addr_t cfa_regval = LLDB_INVALID_ADDRESS;
     if (!ReadGPRValue (row_register_kind, active_row->GetCFARegister(), cfa_regval))
     {
+        UnwindLogMsg ("could not read CFA register for this frame.");
         m_frame_type = eNotAValidFrame;
         return;
     }
@@ -230,17 +234,20 @@ RegisterContextLLDB::InitializeNonZerothFrame()
     if (IsFrameZero ())
     {
         m_frame_type = eNotAValidFrame;
+        UnwindLogMsg ("non-zeroth frame tests positive for IsFrameZero -- that shouldn't happen.");
         return;
     }
 
     if (!GetNextFrame().get() || !GetNextFrame()->IsValid())
     {
         m_frame_type = eNotAValidFrame;
+        UnwindLogMsg ("Could not get next frame, marking this frame as invalid.");
         return;
     }
     if (!m_thread.GetRegisterContext())
     {
         m_frame_type = eNotAValidFrame;
+        UnwindLogMsg ("Could not get register context for this thread, marking this frame as invalid.");
         return;
     }
 
@@ -266,6 +273,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
     if (pc == 0)
     {
         m_frame_type = eNotAValidFrame;
+        UnwindLogMsg ("this frame has a pc of 0x0");
         return;
     }
 
@@ -277,7 +285,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
     if (abi)
         pc = abi->FixCodeAddress(pc);
 
-    process->GetTarget().GetSectionLoadList().ResolveLoadAddress (pc, m_current_pc);
+    m_current_pc.SetLoadAddress (pc, &process->GetTarget());
 
     // If we don't have a Module for some reason, we're not going to find symbol/function information - just
     // stick in some reasonable defaults and hope we can unwind past this frame.
@@ -305,6 +313,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
             {
                 // anywhere other than the second frame, a non-executable pc means we're off in the weeds -- stop now.
                 m_frame_type = eNotAValidFrame;
+                UnwindLogMsg ("pc is in a non-executable section of memory and this isn't the 2nd frame in the stack walk.");
                 return;
             }
         }
@@ -353,6 +362,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
                     && (permissions & ePermissionsReadable) == 0)
                 {
                     m_frame_type = eNotAValidFrame;
+                    UnwindLogMsg ("the CFA points to a region of memory that is not readable");
                     return;
                 }
             }
@@ -367,10 +377,15 @@ RegisterContextLLDB::InitializeNonZerothFrame()
             return;
         }
         m_frame_type = eNotAValidFrame;
+        UnwindLogMsg ("could not find any symbol for this pc, or a default unwind plan, to continue unwind.");
         return;
     }
 
     bool resolve_tail_call_address = true; // m_current_pc can be one past the address range of the function...
+                                           // This will handle the case where the saved pc does not point to 
+                                           // a function/symbol because it is beyond the bounds of the correct
+                                           // function and there's no symbol there.  ResolveSymbolContextForAddress
+                                           // will fail to find a symbol, back up the pc by 1 and re-search.
     uint32_t resolved_scope = pc_module_sp->ResolveSymbolContextForAddress (m_current_pc,
                                                                             eSymbolContextFunction | eSymbolContextSymbol,
                                                                             m_sym_ctx, resolve_tail_call_address);
@@ -393,18 +408,35 @@ RegisterContextLLDB::InitializeNonZerothFrame()
     if (m_sym_ctx_valid == false)
        decr_pc_and_recompute_addr_range = true;
 
-    // Or if we're in the middle of the stack (and not "above" an asynchronous event like sigtramp), and
-    // our "current" pc is the start of a function or our "current" pc is one past the end of a function...
+    // Or if we're in the middle of the stack (and not "above" an asynchronous event like sigtramp),
+    // and our "current" pc is the start of a function...
     if (m_sym_ctx_valid
         && GetNextFrame()->m_frame_type != eSigtrampFrame
         && GetNextFrame()->m_frame_type != eDebuggerFrame
         && addr_range.GetBaseAddress().IsValid()
-        && addr_range.GetBaseAddress().GetSection() == m_current_pc.GetSection())
+        && addr_range.GetBaseAddress().GetSection() == m_current_pc.GetSection()
+        && addr_range.GetBaseAddress().GetOffset() == m_current_pc.GetOffset())
     {
-        if (addr_range.GetBaseAddress().GetOffset() == m_current_pc.GetOffset() ||
-            addr_range.GetBaseAddress().GetOffset() + addr_range.GetByteSize() == m_current_pc.GetOffset())
+        decr_pc_and_recompute_addr_range = true;
+    }
+
+    // We need to back up the pc by 1 byte and re-search for the Symbol to handle the case where the "saved pc"
+    // value is pointing to the next function, e.g. if a function ends with a CALL instruction.
+    // FIXME this may need to be an architectural-dependent behavior; if so we'll need to add a member function
+    // to the ABI plugin and consult that.
+    if (decr_pc_and_recompute_addr_range)
+    {
+        Address temporary_pc(m_current_pc);
+        temporary_pc.SetOffset(m_current_pc.GetOffset() - 1);
+        m_sym_ctx.Clear(false);
+        m_sym_ctx_valid = false;
+        if ((pc_module_sp->ResolveSymbolContextForAddress (temporary_pc, eSymbolContextFunction| eSymbolContextSymbol, m_sym_ctx) & eSymbolContextSymbol) == eSymbolContextSymbol)
         {
-            decr_pc_and_recompute_addr_range = true;
+            m_sym_ctx_valid = true;
+        }
+        if (!m_sym_ctx.GetAddressRange (eSymbolContextFunction | eSymbolContextSymbol, 0, false,  addr_range))
+        {
+            m_sym_ctx_valid = false;
         }
     }
 
@@ -484,6 +516,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
     if (!active_row.get())
     {
         m_frame_type = eNotAValidFrame;
+        UnwindLogMsg ("could not find unwind row for this pc");
         return;
     }
 
@@ -649,7 +682,7 @@ RegisterContextLLDB::GetFullUnwindPlanForFrame ()
         uint32_t permissions;
         addr_t current_pc_addr = m_current_pc.GetLoadAddress (exe_ctx.GetTargetPtr());
         if (current_pc_addr == 0
-            || (process->GetLoadAddressPermissions(current_pc_addr, permissions)
+            || (process->GetLoadAddressPermissions (current_pc_addr, permissions)
                 && (permissions & ePermissionsExecutable) == 0))
         {
             unwind_plan_sp.reset (new UnwindPlan (lldb::eRegisterKindGeneric));
@@ -916,6 +949,12 @@ RegisterContextLLDB::IsValid () const
     return m_frame_type != eNotAValidFrame;
 }
 
+bool
+RegisterContextLLDB::IsSigtrampFrame () const
+{
+    return m_frame_type == eSigtrampFrame;
+}
+
 // A skip frame is a bogus frame on the stack -- but one where we're likely to find a real frame farther
 // up the stack if we keep looking.  It's always the second frame in an unwind (i.e. the first frame after
 // frame zero) where unwinding can be the trickiest.  Ideally we'll mark up this frame in some way so the
@@ -1162,7 +1201,7 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, lldb_privat
         regloc.type = UnwindLLDB::RegisterLocation::eRegisterValueInferred;
         regloc.location.inferred_value = m_cfa + offset;
         m_registers[lldb_regnum] = regloc;
-        UnwindLogMsg ("supplying caller's register %d, value is CFA plus offset", lldb_regnum);
+        UnwindLogMsg ("supplying caller's register %d, value is CFA plus offset %d", lldb_regnum, offset);
         return UnwindLLDB::RegisterSearchResult::eRegisterFound;
     }
 
@@ -1172,7 +1211,7 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, lldb_privat
         regloc.type = UnwindLLDB::RegisterLocation::eRegisterSavedAtMemoryLocation;
         regloc.location.target_memory_location = m_cfa + offset;
         m_registers[lldb_regnum] = regloc;
-        UnwindLogMsg ("supplying caller's register %d from the stack, saved at CFA plus offset", lldb_regnum);
+        UnwindLogMsg ("supplying caller's register %d from the stack, saved at CFA plus offset %d", lldb_regnum, offset);
         return UnwindLLDB::RegisterSearchResult::eRegisterFound;
     }
 

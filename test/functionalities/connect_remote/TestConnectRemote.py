@@ -12,6 +12,7 @@ class ConnectRemoteTestCase(TestBase):
 
     mydir = TestBase.compute_mydir(__file__)
 
+    @expectedFailureFreeBSD('llvm.org/pr18313')
     def test_connect_remote(self):
         """Test "process connect connect:://localhost:12345"."""
 
@@ -31,10 +32,7 @@ class ConnectRemoteTestCase(TestBase):
         fakeserver.expect_exact('Listening on localhost:12345')
 
         # Connect to the fake server....
-        if sys.platform.startswith('freebsd') or sys.platform.startswith("linux"):
-            self.runCmd("process connect -p gdb-remote connect://localhost:12345")
-        else:
-            self.runCmd("process connect connect://localhost:12345")
+        self.runCmd("process connect -p gdb-remote connect://localhost:12345")
 
 
 if __name__ == '__main__':
