@@ -669,6 +669,7 @@ GDBRemoteCommunication::StartDebugserverProcess (const char *hostname,
         debugserver_args.AppendArgument("--setsid");
 
         char named_pipe_path[PATH_MAX];
+        named_pipe_path[0] = '\0';
 
         bool listen = false;
         if (host_and_port[0])
@@ -694,16 +695,16 @@ GDBRemoteCommunication::StartDebugserverProcess (const char *hostname,
 
                 if (::mktemp (named_pipe_path))
                 {
+#if defined(_MSC_VER)
+                    if ( false )
+#else
                     if (::mkfifo(named_pipe_path, 0600) == 0)
+#endif
                     {
                         debugserver_args.AppendArgument("--named-pipe");
                         debugserver_args.AppendArgument(named_pipe_path);
                     }
-                    else
-                        named_pipe_path[0] = '\0';
                 }
-                else
-                    named_pipe_path[0] = '\0';
             }
             else
             {
@@ -712,8 +713,6 @@ GDBRemoteCommunication::StartDebugserverProcess (const char *hostname,
         }
         else
         {
-            named_pipe_path[0] = '\0';
-        
             // No host and port given, so lets listen on our end and make the debugserver
             // connect to us..
             error = StartListenThread ("localhost", 0);
