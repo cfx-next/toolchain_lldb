@@ -1343,3 +1343,9 @@ PlatformDarwin::GetResumeCountForLaunchInfo (ProcessLaunchInfo &launch_info)
     else
         return 1;
 }
+
+void
+PlatformDarwin::CalculateTrapHandlerSymbolNames ()
+{   
+    m_trap_handlers.push_back (ConstString ("_sigtramp"));
+}   

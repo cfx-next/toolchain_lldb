@@ -21,16 +21,17 @@
 #include "lldb/Symbol/FuncUnwinders.h"
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/ObjectFile.h"
-#include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Symbol/Symbol.h"
+#include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Target/ABI.h"
+#include "lldb/Target/DynamicLoader.h"
 #include "lldb/Target/ExecutionContext.h"
+#include "lldb/Target/Platform.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/SectionLoadList.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
-#include "lldb/Target/DynamicLoader.h"
 
 #include "RegisterContextLLDB.h"
 
@@ -76,7 +77,7 @@ RegisterContextLLDB::RegisterContextLLDB
 
     // This same code exists over in the GetFullUnwindPlanForFrame() but it may not have been executed yet
     if (IsFrameZero()
-        || next_frame->m_frame_type == eSigtrampFrame
+        || next_frame->m_frame_type == eTrapHandlerFrame
         || next_frame->m_frame_type == eDebuggerFrame)
     {
         m_all_registers_available = true;
@@ -171,11 +172,9 @@ RegisterContextLLDB::InitializeZerothFrame()
     AddressRange addr_range;
     m_sym_ctx.GetAddressRange (eSymbolContextFunction | eSymbolContextSymbol, 0, false, addr_range);
 
-    static ConstString g_sigtramp_name ("_sigtramp");
-    if ((m_sym_ctx.function && m_sym_ctx.function->GetName() == g_sigtramp_name) ||
-        (m_sym_ctx.symbol   && m_sym_ctx.symbol->GetName()   == g_sigtramp_name))
+    if (IsTrapHandlerSymbol (process, m_sym_ctx))
     {
-        m_frame_type = eSigtrampFrame;
+        m_frame_type = eTrapHandlerFrame;
     }
     else
     {
@@ -442,7 +441,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
     // Or if we're in the middle of the stack (and not "above" an asynchronous event like sigtramp),
     // and our "current" pc is the start of a function...
     if (m_sym_ctx_valid
-        && GetNextFrame()->m_frame_type != eSigtrampFrame
+        && GetNextFrame()->m_frame_type != eTrapHandlerFrame
         && GetNextFrame()->m_frame_type != eDebuggerFrame
         && addr_range.GetBaseAddress().IsValid()
         && addr_range.GetBaseAddress().GetSection() == m_current_pc.GetSection()
@@ -492,11 +491,9 @@ RegisterContextLLDB::InitializeNonZerothFrame()
         m_current_offset_backed_up_one = -1;
     }
 
-    static ConstString sigtramp_name ("_sigtramp");
-    if ((m_sym_ctx.function && m_sym_ctx.function->GetMangled().GetMangledName() == sigtramp_name)
-        || (m_sym_ctx.symbol && m_sym_ctx.symbol->GetMangled().GetMangledName() == sigtramp_name))
+    if (IsTrapHandlerSymbol (process, m_sym_ctx))
     {
-        m_frame_type = eSigtrampFrame;
+        m_frame_type = eTrapHandlerFrame;
     }
     else
     {
@@ -617,7 +614,7 @@ RegisterContextLLDB::IsFrameZero () const
 //
 // On entry to this method,
 //
-//   1. m_frame_type should already be set to eSigtrampFrame/eDebuggerFrame if either of those are correct,
+//   1. m_frame_type should already be set to eTrapHandlerFrame/eDebuggerFrame if either of those are correct,
 //   2. m_sym_ctx should already be filled in, and
 //   3. m_current_pc should have the current pc value for this frame
 //   4. m_current_offset_backed_up_one should have the current byte offset into the function, maybe backed up by 1, -1 if unknown
@@ -639,7 +636,7 @@ RegisterContextLLDB::GetFastUnwindPlanForFrame ()
         return unwind_plan_sp;
 
     // If we're in _sigtramp(), unwinding past this frame requires special knowledge.
-    if (m_frame_type == eSigtrampFrame || m_frame_type == eDebuggerFrame)
+    if (m_frame_type == eTrapHandlerFrame || m_frame_type == eDebuggerFrame)
         return unwind_plan_sp;
 
     unwind_plan_sp = func_unwinders_sp->GetUnwindPlanFastUnwind (m_thread);
@@ -668,7 +665,7 @@ RegisterContextLLDB::GetFastUnwindPlanForFrame ()
 
 // On entry to this method,
 //
-//   1. m_frame_type should already be set to eSigtrampFrame/eDebuggerFrame if either of those are correct,
+//   1. m_frame_type should already be set to eTrapHandlerFrame/eDebuggerFrame if either of those are correct,
 //   2. m_sym_ctx should already be filled in, and
 //   3. m_current_pc should have the current pc value for this frame
 //   4. m_current_offset_backed_up_one should have the current byte offset into the function, maybe backed up by 1, -1 if unknown
@@ -693,7 +690,7 @@ RegisterContextLLDB::GetFullUnwindPlanForFrame ()
 
     bool behaves_like_zeroth_frame = false;
     if (IsFrameZero ()
-        || GetNextFrame()->m_frame_type == eSigtrampFrame
+        || GetNextFrame()->m_frame_type == eTrapHandlerFrame
         || GetNextFrame()->m_frame_type == eDebuggerFrame)
     {
         behaves_like_zeroth_frame = true;
@@ -763,7 +760,7 @@ RegisterContextLLDB::GetFullUnwindPlanForFrame ()
     // is properly encoded in the eh_frame section, so prefer that if available.
     // On other platforms we may need to provide a platform-specific UnwindPlan which encodes the details of
     // how to unwind out of sigtramp.
-    if (m_frame_type == eSigtrampFrame)
+    if (m_frame_type == eTrapHandlerFrame)
     {
         m_fast_unwind_plan_sp.reset();
         unwind_plan_sp = func_unwinders_sp->GetUnwindPlanAtCallSite (m_current_offset_backed_up_one);
@@ -983,9 +980,9 @@ RegisterContextLLDB::IsValid () const
 }
 
 bool
-RegisterContextLLDB::IsSigtrampFrame () const
+RegisterContextLLDB::IsTrapHandlerFrame () const
 {
-    return m_frame_type == eSigtrampFrame;
+    return m_frame_type == eTrapHandlerFrame;
 }
 
 // A skip frame is a bogus frame on the stack -- but one where we're likely to find a real frame farther
@@ -998,6 +995,35 @@ bool
 RegisterContextLLDB::IsSkipFrame () const
 {
     return m_frame_type == eSkipFrame;
+}
+
+bool
+RegisterContextLLDB::IsTrapHandlerSymbol (lldb_private::Process *process, const lldb_private::SymbolContext &m_sym_ctx) const
+{
+    PlatformSP platform_sp (process->GetTarget().GetPlatform());
+    if (platform_sp)
+    {
+        const std::vector<ConstString> trap_handler_names (platform_sp->GetTrapHandlerSymbolNames());
+        for (ConstString name : trap_handler_names)
+        {
+            if ((m_sym_ctx.function && m_sym_ctx.function->GetName() == name) ||
+                (m_sym_ctx.symbol   && m_sym_ctx.symbol->GetName()   == name))
+            {
+                return true;
+            }
+        }
+    }
+    const std::vector<ConstString> user_specified_trap_handler_names (m_parent_unwind.GetUserSpecifiedTrapHandlerFunctionNames());
+    for (ConstString name : user_specified_trap_handler_names)
+    {   
+        if ((m_sym_ctx.function && m_sym_ctx.function->GetName() == name) ||
+            (m_sym_ctx.symbol   && m_sym_ctx.symbol->GetName()   == name))
+        {   
+            return true;
+        }   
+    }   
+
+    return false;
 }
 
 // Answer the question: Where did THIS frame save the CALLER frame ("previous" frame)'s register value?
@@ -1622,4 +1648,5 @@ RegisterContextLLDB::UnwindLogMsgVerbose (const char *fmt, ...)
         free (logmsg);
     }
 }
+
 

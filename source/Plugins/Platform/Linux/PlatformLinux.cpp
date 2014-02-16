@@ -480,3 +480,9 @@ PlatformLinux::Attach(ProcessAttachInfo &attach_info,
     }
     return process_sp;
 }
+
+void
+PlatformLinux::CalculateTrapHandlerSymbolNames ()
+{   
+    m_trap_handlers.push_back (ConstString ("_sigtramp"));
+}   
