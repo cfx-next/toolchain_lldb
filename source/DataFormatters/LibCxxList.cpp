@@ -257,9 +257,13 @@ lldb_private::formatters::LibcxxStdListSyntheticFrontEnd::GetChildAtIndex (size_
         return lldb::ValueObjectSP();
     // we need to copy current_sp into a new object otherwise we will end up with all items named __value_
     DataExtractor data;
-    current_sp->GetData(data);
+    Error error;
+    current_sp->GetData(data, error);
+    if (error.Fail())
+        return lldb::ValueObjectSP();
+    
     StreamString name;
-    name.Printf("[%zu]",idx);
+    name.Printf("[%" PRIu64 "]", (uint64_t)idx);
     return (m_children[idx] = ValueObject::CreateValueObjectFromData(name.GetData(), data, m_backend.GetExecutionContextRef(), m_element_type));
 }
 
